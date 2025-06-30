@@ -12,6 +12,7 @@ This solution demonstrates the capabilities provided by all five Catalyst APIs t
 - [Sign up](https://catalyst.diagrid.io) for Diagrid Catalyst
 - Install latest [Diagrid CLI](https://docs.diagrid.io/catalyst/references/cli-reference/intro#installing-the-cli)
 - Install [Python3](https://www.python.org/downloads/)
+- Install [Node.js](https://nodejs.org/) (version 20 or higher) and npm
 
 ### Prepare applications
 
