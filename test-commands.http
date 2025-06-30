@@ -93,3 +93,98 @@ Content-Type: application/json
 }
 
 
+### =====================================
+### RETURN WORKFLOWS (Workflow Chaining)
+### =====================================
+
+### Submit a standard return request
+// @name standard_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_john_abc123",
+  "customer": "john",
+  "item": "apple",
+  "reason": "wrong_size",
+  "description": "Item was too small",
+  "return_value": 75.0
+}
+
+### Submit a defective item return
+// @name defective_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_sarah_xyz789",
+  "customer": "sarah",
+  "item": "orange",
+  "reason": "defective",
+  "description": "Item arrived damaged",
+  "return_value": 45.0
+}
+
+### Submit a high-value return (requires approval)
+// @name high_value_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_alice_def456",
+  "customer": "alice",
+  "item": "kiwi",
+  "reason": "not_as_described",
+  "description": "Product quality not as expected",
+  "return_value": 850.0
+}
+
+### Submit an expedited return (changed mind)
+// @name expedited_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_bob_ghi789",
+  "customer": "bob",
+  "item": "pear",
+  "reason": "changed_mind",
+  "description": "No longer needed",
+  "return_value": 120.0
+}
+
+### Get standard return status
+@standard_return_id = {{standard_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{standard_return_id}}
+
+### Get high-value return status (check for approval requirement)
+@high_value_return_id = {{high_value_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{high_value_return_id}}
+
+### Approve high-value return
+@high_value_return_id = {{high_value_return.response.body.instance_id}}
+
+POST http://localhost:3008/returns/{{high_value_return_id}}/approve
+Content-Type: application/json
+
+{
+  "approver": "manager_jane",
+  "approved": true
+}
+
+### Reject high-value return
+// @name rejected_return
+POST http://localhost:3008/returns/return_alice_b8qhj2/approve
+Content-Type: application/json
+
+{
+  "approver": "manager_jane",
+  "approved": false
+}
+
+### Health check for returns service
+GET http://localhost:3008/health
+
+

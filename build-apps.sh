@@ -18,3 +18,6 @@ pip3 install -r requirements.txt
 
 cd ../batch-processor
 pip3 install -r requirements.txt
+
+cd ../returns
+pip3 install -r requirements.txt

@@ -8,6 +8,7 @@ This solution demonstrates the capabilities provided by all five Catalyst APIs t
 - **notifications**: Subscribes to messages published by the order-processor using the Pub/Sub API and subsequently displays those messages through a simple JavaScript user interface.
 - **shipping**: Receives direct invocation requests sent by the order-processor using the Invocation API to simulate the scheduling of order shipments.
 - **payments**: Receives direct invocation requests sent by the order-processor using the Invocation API to mock the processing of order payments.
+- **returns**: Demonstrates workflow chaining and advanced state management through return processing workflows that reference original orders, utilize child workflows for different return types (defective, standard, expedited), and implement external event handling for manager approvals.
 
 ## Prerequisites
 - [Sign up](https://catalyst.diagrid.io) for Diagrid Catalyst
@@ -83,3 +84,94 @@ This demonstrates how Dapr workflows can orchestrate complex business processes 
 - Batch operations
 - Parallel task execution
 - Coordinated microservice interactions
+
+## Return Workflows (Workflow Chaining & State Management)
+
+The application now includes **Return Workflows** via the `returns` service, showcasing **workflow chaining** and advanced **state management** patterns:
+
+### Architecture:
+- **Main Return Workflow**: Orchestrates the entire return process with multiple validation and processing steps
+- **Child Workflows**: Specialized processing based on return type:
+  - **Defective Returns**: Full refund, no restocking (item disposed)
+  - **Standard Returns**: Sequential refund + inventory restocking
+  - **Expedited Returns**: Parallel processing for faster completion
+- **External Events**: Manager approval system for high-value returns (>$500)
+- **State Management**: Comprehensive tracking through validation → approval → processing → completion
+
+### Key Features:
+- **Workflow Chaining**: Returns reference and validate against original orders
+- **Dynamic Child Workflows**: Different processing paths based on return reason
+- **External Event Handling**: 24-hour approval timeouts with automatic rejection
+- **Parallel Processing**: Expedited returns handle refund + restocking simultaneously
+- **Real-time Notifications**: Live progress updates with `[RETURN]` prefix
+- **Comprehensive Validation**: Time-based eligibility, value thresholds, and business rules
+
+### Example Return Requests:
+
+**Standard Return:**
+```json
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_john_abc123",
+  "customer": "john",
+  "item": "apple",
+  "reason": "wrong_size",
+  "description": "Item was too small",
+  "return_value": 75.0
+}
+```
+
+**Defective Item Return:**
+```json
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_sarah_xyz789",
+  "customer": "sarah",
+  "item": "orange",
+  "reason": "defective",
+  "description": "Item arrived damaged",
+  "return_value": 45.0
+}
+```
+
+**High-Value Return (Requires Approval):**
+```json
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_alice_def456",
+  "customer": "alice",
+  "item": "kiwi",
+  "reason": "not_as_described",
+  "description": "Product quality not as expected",
+  "return_value": 850.0
+}
+```
+
+### Check Return Status:
+```http
+GET http://localhost:3008/returns/{return_id}
+```
+
+### Approve High-Value Return:
+```json
+POST http://localhost:3008/returns/{return_id}/approve
+Content-Type: application/json
+
+{
+  "approver": "manager_jane",
+  "approved": true
+}
+```
+
+Return workflows demonstrate advanced Dapr patterns including:
+- **Workflow Chaining**: Connecting return processes to original order data
+- **State Management**: Multi-step state transitions with persistence
+- **Event-Driven Approvals**: External events with timeouts and fallbacks
+- **Parallel Execution**: Concurrent activities for performance optimization
+- **Business Logic Orchestration**: Complex decision trees and compensation patterns

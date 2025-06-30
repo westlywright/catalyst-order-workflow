@@ -28,3 +28,7 @@ apps:
     appPort: 3007
     appDirPath: ./services/batch-processor
     command: ["python3", "app.py"]
+  - appID: returns
+    appPort: 3008
+    appDirPath: ./services/returns
+    command: ["python3", "app.py"]
