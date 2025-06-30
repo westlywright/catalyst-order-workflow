@@ -15,3 +15,6 @@ pip3 install -r requirements.txt
 
 cd ../shipping
 pip3 install -r requirements.txt
+
+cd ../batch-processor
+pip3 install -r requirements.txt

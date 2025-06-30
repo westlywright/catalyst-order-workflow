@@ -35,3 +35,61 @@ Content-Type: application/json
 {"approver": "kendall", "approved": true}
 
 
+### =====================================
+### BULK ORDER ENDPOINTS (Child Workflows)
+### =====================================
+
+### First, make sure inventory is stocked!
+
+### Submit a bulk order with multiple items
+// @name bulkorder
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "alice",
+  "items": [
+    {"item": "apple", "quantity": 2, "price": 50.0},
+    {"item": "orange", "quantity": 1, "price": 75.0},
+    {"item": "pear", "quantity": 3, "price": 30.0}
+  ]
+}
+
+### Submit a bulk order with expensive items (to test approval workflow)
+// @name bulkorder_expensive
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "bob",
+  "items": [
+    {"item": "kiwi", "quantity": 1, "price": 800.0},
+    {"item": "apple", "quantity": 2, "price": 600.0}
+  ]
+}
+
+### Get bulk order status
+@bulk_instance_id = {{bulkorder.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{bulk_instance_id}}
+
+### Get expensive bulk order status
+@bulk_expensive_instance_id = {{bulkorder_expensive.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{bulk_expensive_instance_id}}
+
+### Health check for batch processor
+GET http://localhost:3007/health
+
+### Approve a specific item in a bulk order (for expensive items)
+### NOTE: Use the child workflow IDs from the bulk order response
+### Format: bulk_{customer}_{suffix}_child_{index}_{item}
+POST http://localhost:3007/bulk-orders/bulk_bob_abc123/items/bulk_bob_ksu3jl_child_1_apple/approve
+Content-Type: application/json
+
+{
+  "approver": "manager",
+  "approved": true
+}
+
+

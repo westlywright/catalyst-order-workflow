@@ -24,3 +24,7 @@ apps:
     appPort: 3004
     appDirPath: ./services/shipping
     command: ["python3", "app.py"]
+  - appID: batch-processor
+    appPort: 3007
+    appDirPath: ./services/batch-processor
+    command: ["python3", "app.py"]
