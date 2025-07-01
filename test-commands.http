@@ -84,7 +84,7 @@ GET http://localhost:3007/health
 ### Approve a specific item in a bulk order (for expensive items)
 ### NOTE: Use the child workflow IDs from the bulk order response
 ### Format: bulk_{customer}_{suffix}_child_{index}_{item}
-POST http://localhost:3007/bulk-orders/bulk_bob_abc123/items/bulk_bob_ksu3jl_child_1_apple/approve
+POST http://localhost:3007/bulk-orders/bulk_bob_3gu2ao/items/bulk_bob_3gu2ao_child_1_apple/approve
 Content-Type: application/json
 
 {
@@ -186,5 +186,86 @@ Content-Type: application/json
 
 ### Health check for returns service
 GET http://localhost:3008/health
+
+
+### =============================================
+### FOR COMPREHENSIVE CHAOS ENGINEERING DEMOS
+### - See chaos-demo.http for complete failure simulation scenarios
+### - Rich diagnostic events and dashboard debugging capabilities
+### - Advanced retry patterns, circuit breakers, and cascading failures
+### =============================================
+
+### =============================================
+### ENHANCED DEBUGGING & CIRCUIT BREAKER MONITORING
+### - Monitor circuit breaker states in order-processor
+### - Test resilience patterns and failure handling
+### - NOTE: For comprehensive chaos testing, see chaos-demo.http
+### =============================================
+
+### Check baseline circuit breaker status (should show all services healthy)
+### EXPECTED: All services show state="closed", failure_count=0, last_failure_time=null
+GET http://localhost:3006/circuit-breakers
+
+### =============================================
+### CIRCUIT BREAKER TESTING WORKFLOW
+### =============================================
+### IMPORTANT: These tests are most effective when run DURING active chaos scenarios
+### 1. Start chaos scenarios from chaos-demo.http first
+### 2. Then run these orders to see how circuit breakers protect the system
+### 3. Monitor circuit-breakers endpoint to see state changes in real-time
+### =============================================
+
+### Create order to test retry logic during service failures
+### PURPOSE: This order will trigger retries if dependent services are failing
+### MONITORING: Watch for retry attempts in order-processor logs
+### BEST USED: During active chaos scenarios (inventory/payment failures)
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "circuit_breaker_test_user",
+  "item": "pear",
+  "total": 299.99
+}
+
+### Create high-value order to test approval workflow under stress
+### PURPOSE: Tests external event handling when payment services are degraded
+### MONITORING: Watch for approval workflow delays/failures during chaos
+### BEST USED: During payment service chaos scenarios
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "approval_stress_test_user",
+  "item": "premium_stress_test_widget",
+  "total": 1500.00
+}
+
+### Check circuit breaker status after submitting orders
+### PURPOSE: See if circuit breakers have opened due to failures
+### EXPECTED DURING CHAOS: Some services may show state="open" or "half-open"
+GET http://localhost:3006/circuit-breakers
+
+### =============================================
+### CIRCUIT BREAKER DEMONSTRATION GUIDE
+### =============================================
+### To properly demonstrate circuit breaker functionality:
+###
+### 1. BASELINE: Run GET /circuit-breakers (should show all closed)
+### 2. START CHAOS: Execute scenarios from chaos-demo.http
+### 3. STRESS TEST: Submit orders above while chaos is active
+### 4. MONITOR: Watch circuit-breakers endpoint for state changes
+### 5. OBSERVE: Note how circuit breakers protect against cascade failures
+###
+### Circuit Breaker States:
+### - CLOSED: Normal operation, requests pass through
+### - OPEN: Too many failures, requests fail fast (no retry)
+### - HALF-OPEN: Testing if service has recovered
+###
+### Expected Behavior During Chaos:
+### - Failure count increases as services fail
+### - State transitions from closed → open after threshold
+### - Fast failures protect system from cascade effects
+### =============================================
 
 

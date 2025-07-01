@@ -94,7 +94,7 @@ def process_bulk_order_workflow(ctx: wf.DaprWorkflowContext, bulk_order: BulkOrd
         bulk_order_id = bulk_order.id
         total = bulk_order.total
 
-    yield ctx.call_activity(notify_bulk, input=f"Starting bulk order processing for {customer}. Items: {len(items)}")
+    yield ctx.call_activity(announce_bulk_order_started, input=f"Starting bulk order processing for {customer}. Items: {len(items)}")
 
     child_tasks = []
     child_workflow_ids = []
@@ -124,7 +124,7 @@ def process_bulk_order_workflow(ctx: wf.DaprWorkflowContext, bulk_order: BulkOrd
         child_workflow_id = f"{bulk_order_id}_child_{i}_{item_name}"
         child_workflow_ids.append(child_workflow_id)
 
-        yield ctx.call_activity(notify_bulk, input=f"Spawning child workflow for item: {item_name} (ID: {child_workflow_id})")
+        yield ctx.call_activity(announce_child_workflow_spawned, input=f"Spawning child workflow for item: {item_name} (ID: {child_workflow_id})")
 
         # Call child workflow (this will invoke the existing order processor)
         child_task = ctx.call_child_workflow(
@@ -134,7 +134,7 @@ def process_bulk_order_workflow(ctx: wf.DaprWorkflowContext, bulk_order: BulkOrd
         )
         child_tasks.append((child_task, item_name, child_workflow_id))
 
-    yield ctx.call_activity(notify_bulk, input=f"All {len(child_tasks)} child workflows spawned. Waiting for completion...")
+    yield ctx.call_activity(announce_waiting_for_children, input=f"All {len(child_tasks)} child workflows spawned. Waiting for completion...")
 
     # Wait for all child workflows to complete
     completed_items = []
@@ -147,22 +147,22 @@ def process_bulk_order_workflow(ctx: wf.DaprWorkflowContext, bulk_order: BulkOrd
                 child_result = yield child_task
                 if child_result and getattr(child_result, 'success', False):
                     completed_items.append(item_name)
-                    yield ctx.call_activity(notify_bulk, input=f"✅ Item '{item_name}' processed successfully")
+                    yield ctx.call_activity(announce_item_success, input=f"✅ Item '{item_name}' processed successfully")
                 else:
                     failed_items.append(item_name)
                     failure_msg = getattr(child_result, 'message', 'Unknown error') if child_result else 'No result returned'
-                    yield ctx.call_activity(notify_bulk, input=f"❌ Item '{item_name}' failed: {failure_msg}")
+                    yield ctx.call_activity(announce_item_failure, input=f"❌ Item '{item_name}' failed: {failure_msg}")
             except Exception as e:
                 failed_items.append(item_name)
-                yield ctx.call_activity(notify_bulk, input=f"❌ Item '{item_name}' failed with exception: {str(e)}")
+                yield ctx.call_activity(announce_item_failure, input=f"❌ Item '{item_name}' failed with exception: {str(e)}")
 
         # Determine overall success
         overall_success = len(failed_items) == 0
 
         if overall_success:
-            yield ctx.call_activity(notify_bulk, input=f"🎉 Bulk order completed successfully! All {len(completed_items)} items processed.")
+            yield ctx.call_activity(announce_bulk_order_completed, input=f"🎉 Bulk order completed successfully! All {len(completed_items)} items processed.")
         else:
-            yield ctx.call_activity(notify_bulk, input=f"⚠️ Bulk order partially completed. Success: {len(completed_items)}, Failed: {len(failed_items)}")
+            yield ctx.call_activity(announce_bulk_order_partial_success, input=f"⚠️ Bulk order partially completed. Success: {len(completed_items)}, Failed: {len(failed_items)}")
 
         return BulkOrderResult(
             id=bulk_order_id,
@@ -174,7 +174,7 @@ def process_bulk_order_workflow(ctx: wf.DaprWorkflowContext, bulk_order: BulkOrd
         )
 
     except Exception as e:
-        yield ctx.call_activity(notify_bulk, input=f"💥 Bulk order workflow failed: {str(e)}")
+        yield ctx.call_activity(announce_bulk_order_failed, input=f"💥 Bulk order workflow failed: {str(e)}")
         return BulkOrderResult(
             id=bulk_order_id,
             success=False,
@@ -206,21 +206,21 @@ def process_single_item_workflow(ctx: wf.DaprWorkflowContext, single_order: Sing
             total=single_order.get("total", 0.0)
         )
 
-    yield ctx.call_activity(notify_bulk, input=f"🔄 Processing single item: {single_order.item} for {single_order.customer}")
+    yield ctx.call_activity(announce_item_processing_started, input=f"🔄 Processing single item: {single_order.item} for {single_order.customer}")
 
     # Step 1: Reserve inventory
-    result = yield ctx.call_activity(reserve_inventory_bulk, input=single_order)
+    result = yield ctx.call_activity(reserve_item_inventory, input=single_order)
 
     if not result.success:
-        yield ctx.call_activity(notify_bulk, input=f"❌ Failed to reserve inventory for {single_order.item}: {result.message}")
+        yield ctx.call_activity(announce_inventory_reservation_failed, input=f"❌ Failed to reserve inventory for {single_order.item}: {result.message}")
         return SingleOrderResult(single_order.id, False, result.message)
 
-    yield ctx.call_activity(notify_bulk, input=f"✅ Reserved inventory for: {single_order.item}")
+    yield ctx.call_activity(announce_inventory_reserved, input=f"✅ Reserved inventory for: {single_order.item}")
 
     # Step 2: Check if approval is needed for high-value items
     if single_order.total >= APPROVAL_THRESHOLD:
         approval_deadline = ctx.current_utc_datetime + APPROVAL_TIMEOUT
-        yield ctx.call_activity(notify_bulk, input=f"⏳ Waiting for approval for {single_order.item} (${single_order.total:.2f} >= ${APPROVAL_THRESHOLD:.2f})")
+        yield ctx.call_activity(announce_approval_required, input=f"⏳ Waiting for approval for {single_order.item} (${single_order.total:.2f} >= ${APPROVAL_THRESHOLD:.2f})")
 
         # Block the workflow on either an approval event or a timeout
         approval_task = ctx.wait_for_external_event("approval")
@@ -229,53 +229,53 @@ def process_single_item_workflow(ctx: wf.DaprWorkflowContext, single_order: Sing
 
         if winner == timeout_expired_task:
             message = f"Approval deadline expired for {single_order.item}"
-            yield ctx.call_activity(notify_bulk, input=f"❌ {message}")
+            yield ctx.call_activity(announce_approval_timeout, input=f"❌ {message}")
             return SingleOrderResult(single_order.id, False, message)
 
         # Check the approval result
         approval = yield approval_task
         if not approval.approved:
             message = f"Order for {single_order.item} was rejected by {approval.approver}"
-            yield ctx.call_activity(notify_bulk, input=f"❌ {message}")
+            yield ctx.call_activity(announce_approval_rejected, input=f"❌ {message}")
             return SingleOrderResult(single_order.id, False, message)
 
-        yield ctx.call_activity(notify_bulk, input=f"✅ Order for {single_order.item} was approved by {approval.approver}")
+        yield ctx.call_activity(announce_approval_received, input=f"✅ Order for {single_order.item} was approved by {approval.approver}")
 
     # Step 3: Process payment
-    yield ctx.call_activity(notify_bulk, input=f"💳 Processing payment for {single_order.item}")
+    yield ctx.call_activity(announce_payment_processing, input=f"💳 Processing payment for {single_order.item}")
 
     try:
-        result = yield ctx.call_activity(submit_payment_bulk, input=single_order)
+        result = yield ctx.call_activity(process_item_payment, input=single_order)
         if not result.success:
-            yield ctx.call_activity(notify_bulk, input=f"❌ Payment failed for {single_order.item}: {result.message}")
+            yield ctx.call_activity(announce_payment_failed, input=f"❌ Payment failed for {single_order.item}: {result.message}")
             return SingleOrderResult(single_order.id, False, result.message)
     except Exception as e:
-        yield ctx.call_activity(notify_bulk, input=f"❌ Error processing payment for {single_order.item}: {str(e)}")
+        yield ctx.call_activity(announce_payment_failed, input=f"❌ Error processing payment for {single_order.item}: {str(e)}")
         raise
 
-    yield ctx.call_activity(notify_bulk, input=f"✅ Payment processed for {single_order.item}")
+    yield ctx.call_activity(announce_payment_completed, input=f"✅ Payment processed for {single_order.item}")
 
     # Step 4: Submit for shipping
-    yield ctx.call_activity(notify_bulk, input=f"🚚 Submitting {single_order.item} for shipping")
+    yield ctx.call_activity(announce_shipping_submission, input=f"🚚 Submitting {single_order.item} for shipping")
 
     try:
-        yield ctx.call_activity(submit_order_to_shipping_bulk, input=single_order)
+        yield ctx.call_activity(submit_item_for_shipping, input=single_order)
     except Exception as e:
         # Shipping failed, so we need to refund the payment
-        yield ctx.call_activity(notify_bulk, input=f"❌ Shipping failed for {single_order.item}: {str(e)}")
-        yield ctx.call_activity(refund_payment_bulk, input=single_order)
-        yield ctx.call_activity(notify_bulk, input=f"💰 Payment refunded for {single_order.item}")
+        yield ctx.call_activity(announce_shipping_failed, input=f"❌ Shipping failed for {single_order.item}: {str(e)}")
+        yield ctx.call_activity(process_item_refund, input=single_order)
+        yield ctx.call_activity(announce_payment_refunded, input=f"💰 Payment refunded for {single_order.item}")
         raise
 
-    yield ctx.call_activity(notify_bulk, input=f"✅ {single_order.item} shipment scheduled")
-    yield ctx.call_activity(notify_bulk, input=f"🎉 Order completed for {single_order.customer}: {single_order.item} (${single_order.total:.2f})")
+    yield ctx.call_activity(announce_shipping_scheduled, input=f"✅ {single_order.item} shipment scheduled")
+    yield ctx.call_activity(announce_item_processing_completed, input=f"🎉 Order completed for {single_order.customer}: {single_order.item} (${single_order.total:.2f})")
 
     return SingleOrderResult(single_order.id, True, "Order processed successfully")
 
-# Activity Functions
-def notify_bulk(ctx: wf.WorkflowActivityContext, message: str):
-    """Activity to send notifications for bulk order processing"""
-    logging.info(f"Bulk Order Notification: {message}")
+# Activity Functions - Notification Activities (Stage-Specific)
+def announce_bulk_order_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce bulk order processing has started"""
+    logging.info(f"[BULK START] {message}")
     with DaprClient() as d:
         d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
             "order_id": ctx.workflow_id,
@@ -283,7 +283,229 @@ def notify_bulk(ctx: wf.WorkflowActivityContext, message: str):
             "data-content-type": "application/json"
         }))
 
-def reserve_inventory_bulk(_, single_order: SingleOrder) -> InventoryResult:
+def announce_child_workflow_spawned(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce a child workflow has been spawned"""
+    logging.info(f"[CHILD SPAWN] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_waiting_for_children(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce waiting for child workflows to complete"""
+    logging.info(f"[WAITING] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_item_success(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce successful item processing"""
+    logging.info(f"[ITEM SUCCESS] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_item_failure(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce failed item processing"""
+    logging.info(f"[ITEM FAILURE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_bulk_order_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce bulk order completion"""
+    logging.info(f"[BULK COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_bulk_order_partial_success(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce bulk order partial completion"""
+    logging.info(f"[BULK PARTIAL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_bulk_order_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce bulk order failure"""
+    logging.info(f"[BULK FAILED] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Child Workflow Notification Activities
+def announce_item_processing_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce item processing has started"""
+    logging.info(f"[ITEM START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_inventory_reserved(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce inventory reservation success"""
+    logging.info(f"[INVENTORY OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_inventory_reservation_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce inventory reservation failure"""
+    logging.info(f"[INVENTORY FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_approval_required(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce approval is required"""
+    logging.info(f"[APPROVAL REQ] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_approval_received(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce approval was received"""
+    logging.info(f"[APPROVAL OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_approval_rejected(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce approval was rejected"""
+    logging.info(f"[APPROVAL REJECT] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_approval_timeout(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce approval timeout"""
+    logging.info(f"[APPROVAL TIMEOUT] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_payment_processing(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce payment processing has started"""
+    logging.info(f"[PAYMENT START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_payment_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce payment completion"""
+    logging.info(f"[PAYMENT OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_payment_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce payment failure"""
+    logging.info(f"[PAYMENT FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_shipping_submission(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce shipping submission"""
+    logging.info(f"[SHIPPING START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_shipping_scheduled(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce shipping was scheduled"""
+    logging.info(f"[SHIPPING OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_shipping_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce shipping failure"""
+    logging.info(f"[SHIPPING FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_payment_refunded(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce payment refund"""
+    logging.info(f"[REFUND OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_item_processing_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce item processing completion"""
+    logging.info(f"[ITEM COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[BULK] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Business Logic Activities (Renamed for Clarity)
+def reserve_item_inventory(_, single_order: SingleOrder) -> InventoryResult:
     """Activity to reserve inventory for a single item in bulk order"""
     # Handle case where single_order might be a dict
     if isinstance(single_order, dict):
@@ -308,8 +530,8 @@ def reserve_inventory_bulk(_, single_order: SingleOrder) -> InventoryResult:
         logging.info(f"Inventory result: {inventory_result}")
         return inventory_result
 
-def submit_payment_bulk(_, single_order: SingleOrder) -> PaymentResult:
-    """Activity to submit payment for a single item in bulk order"""
+def process_item_payment(_, single_order: SingleOrder) -> PaymentResult:
+    """Activity to process payment for a single item in bulk order"""
     # Handle case where single_order might be a dict
     if isinstance(single_order, dict):
         single_order = SingleOrder(
@@ -319,7 +541,7 @@ def submit_payment_bulk(_, single_order: SingleOrder) -> PaymentResult:
             total=single_order.get("total", 0.0)
         )
 
-    logging.info(f"Submitting payment for: {single_order}")
+    logging.info(f"Processing payment for: {single_order}")
     with DaprClient() as d:
         resp = d.invoke_method("payments", "api/v1/payments", http_verb="POST", data=json.dumps({
             "id": single_order.id,
@@ -336,7 +558,7 @@ def submit_payment_bulk(_, single_order: SingleOrder) -> PaymentResult:
         logging.info(f"Payment result: {payment_result}")
         return payment_result
 
-def submit_order_to_shipping_bulk(_, single_order: SingleOrder):
+def submit_item_for_shipping(_, single_order: SingleOrder):
     """Activity to submit order to shipping for a single item in bulk order"""
     # Handle case where single_order might be a dict
     if isinstance(single_order, dict):
@@ -358,7 +580,7 @@ def submit_order_to_shipping_bulk(_, single_order: SingleOrder):
         if resp.status_code != 200:
             raise Exception(f"Error calling shipping service: {resp.status_code}")
 
-def refund_payment_bulk(_, single_order: SingleOrder):
+def process_item_refund(_, single_order: SingleOrder):
     """Activity to refund payment for a single item in bulk order"""
     # Handle case where single_order might be a dict
     if isinstance(single_order, dict):
@@ -548,11 +770,40 @@ def main():
     wf_runtime = wf.WorkflowRuntime()
     wf_runtime.register_workflow(process_bulk_order_workflow)
     wf_runtime.register_workflow(process_single_item_workflow)
-    wf_runtime.register_activity(notify_bulk)
-    wf_runtime.register_activity(reserve_inventory_bulk)
-    wf_runtime.register_activity(submit_payment_bulk)
-    wf_runtime.register_activity(submit_order_to_shipping_bulk)
-    wf_runtime.register_activity(refund_payment_bulk)
+
+    # Register stage-specific notification activities
+    wf_runtime.register_activity(announce_bulk_order_started)
+    wf_runtime.register_activity(announce_child_workflow_spawned)
+    wf_runtime.register_activity(announce_waiting_for_children)
+    wf_runtime.register_activity(announce_item_success)
+    wf_runtime.register_activity(announce_item_failure)
+    wf_runtime.register_activity(announce_bulk_order_completed)
+    wf_runtime.register_activity(announce_bulk_order_partial_success)
+    wf_runtime.register_activity(announce_bulk_order_failed)
+
+    # Register child workflow notification activities
+    wf_runtime.register_activity(announce_item_processing_started)
+    wf_runtime.register_activity(announce_inventory_reserved)
+    wf_runtime.register_activity(announce_inventory_reservation_failed)
+    wf_runtime.register_activity(announce_approval_required)
+    wf_runtime.register_activity(announce_approval_received)
+    wf_runtime.register_activity(announce_approval_rejected)
+    wf_runtime.register_activity(announce_approval_timeout)
+    wf_runtime.register_activity(announce_payment_processing)
+    wf_runtime.register_activity(announce_payment_completed)
+    wf_runtime.register_activity(announce_payment_failed)
+    wf_runtime.register_activity(announce_shipping_submission)
+    wf_runtime.register_activity(announce_shipping_scheduled)
+    wf_runtime.register_activity(announce_shipping_failed)
+    wf_runtime.register_activity(announce_payment_refunded)
+    wf_runtime.register_activity(announce_item_processing_completed)
+
+    # Register business logic activities
+    wf_runtime.register_activity(reserve_item_inventory)
+    wf_runtime.register_activity(process_item_payment)
+    wf_runtime.register_activity(submit_item_for_shipping)
+    wf_runtime.register_activity(process_item_refund)
+
     wf_runtime.start()  # non-blocking
 
     # Start the Flask app server

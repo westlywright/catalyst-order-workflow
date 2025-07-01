@@ -1,6 +1,6 @@
 version: 1
 common:
-  logLevel: error
+  logLevel: verbose
   appLogDestination: "console"
   daprdLogDestination: "console"
   resourcesPaths: ["./resources"]
@@ -31,4 +31,8 @@ apps:
   - appID: returns
     appPort: 3008
     appDirPath: ./services/returns
+    command: ["python3", "app.py"]
+  - appID: chaos-engineer
+    appPort: 3010
+    appDirPath: ./services/chaos-engineer
     command: ["python3", "app.py"]

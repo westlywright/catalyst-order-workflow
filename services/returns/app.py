@@ -88,15 +88,15 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
             requested_date=return_request.get("requested_date")
         )
 
-    yield ctx.call_activity(notify_return, input=f"🔄 Processing return request {return_request.id} for {return_request.customer}")
-    yield ctx.call_activity(notify_return, input=f"📋 Return details: {return_request.item} (${return_request.return_value:.2f}) - Reason: {return_request.reason}")
+    yield ctx.call_activity(announce_return_request_received, input=f"🔄 Processing return request {return_request.id} for {return_request.customer}")
+    yield ctx.call_activity(announce_return_details_logged, input=f"📋 Return details: {return_request.item} (${return_request.return_value:.2f}) - Reason: {return_request.reason}")
 
     # Step 1: Validate return request
-    yield ctx.call_activity(notify_return, input=f"✅ Validating return eligibility...")
-    validation_result = yield ctx.call_activity(validate_return_request, input=return_request)
+    yield ctx.call_activity(announce_return_validation_started, input=f"✅ Validating return eligibility...")
+    validation_result = yield ctx.call_activity(validate_return_eligibility, input=return_request)
 
     if not validation_result.valid:
-        yield ctx.call_activity(notify_return, input=f"❌ Return validation failed: {validation_result.message}")
+        yield ctx.call_activity(announce_return_validation_failed, input=f"❌ Return validation failed: {validation_result.message}")
         return ReturnResult(
             id=return_request.id,
             success=False,
@@ -106,11 +106,11 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
             restocked=False
         )
 
-    yield ctx.call_activity(notify_return, input=f"✅ Return request validated successfully")
+    yield ctx.call_activity(announce_return_validation_passed, input=f"✅ Return request validated successfully")
 
     # Step 2: Check if approval is needed
     if validation_result.requires_approval:
-        yield ctx.call_activity(notify_return, input=f"⏳ Return requires manager approval (high value or special circumstances)")
+        yield ctx.call_activity(announce_return_approval_required, input=f"⏳ Return requires manager approval (high value or special circumstances)")
 
         # Wait for approval with 24-hour timeout
         approval_deadline = ctx.current_utc_datetime + timedelta(hours=24)
@@ -121,7 +121,7 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
 
         if winner == timeout_task:
             message = "Return approval deadline expired"
-            yield ctx.call_activity(notify_return, input=f"❌ {message}")
+            yield ctx.call_activity(announce_return_approval_timeout, input=f"❌ {message}")
             return ReturnResult(
                 id=return_request.id,
                 success=False,
@@ -134,7 +134,7 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
         approval = yield approval_task
         if not approval.approved:
             message = f"Return was rejected by {approval.approver}"
-            yield ctx.call_activity(notify_return, input=f"❌ {message}")
+            yield ctx.call_activity(announce_return_approval_rejected, input=f"❌ {message}")
             return ReturnResult(
                 id=return_request.id,
                 success=False,
@@ -144,15 +144,15 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
                 restocked=False
             )
 
-        yield ctx.call_activity(notify_return, input=f"✅ Return approved by {approval.approver}")
+        yield ctx.call_activity(announce_return_approval_received, input=f"✅ Return approved by {approval.approver}")
 
     # Step 3: Determine return processing type and spawn child workflow
-    yield ctx.call_activity(notify_return, input=f"🔄 Determining return processing type...")
+    yield ctx.call_activity(announce_return_type_determination, input=f"🔄 Determining return processing type...")
 
     return_type = determine_return_type(return_request.reason)
     child_workflow_id = f"{return_request.id}_processing_{return_type}"
 
-    yield ctx.call_activity(notify_return, input=f"🚀 Spawning {return_type} return processing workflow")
+    yield ctx.call_activity(announce_return_child_workflow_spawned, input=f"🚀 Spawning {return_type} return processing workflow")
 
     # Call appropriate child workflow based on return type
     if return_type == "defective":
@@ -176,9 +176,9 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
 
     # Step 4: Finalize return
     if processing_result and getattr(processing_result, 'success', False):
-        yield ctx.call_activity(notify_return, input=f"🎉 Return {return_request.id} completed successfully!")
-        yield ctx.call_activity(notify_return, input=f"💰 Refund amount: ${processing_result.refund_amount:.2f}")
-        yield ctx.call_activity(notify_return, input=f"📦 Inventory restocked: {processing_result.restocked}")
+        yield ctx.call_activity(announce_return_processing_completed, input=f"🎉 Return {return_request.id} completed successfully!")
+        yield ctx.call_activity(announce_return_refund_summary, input=f"💰 Refund amount: ${processing_result.refund_amount:.2f}")
+        yield ctx.call_activity(announce_return_inventory_summary, input=f"📦 Inventory restocked: {processing_result.restocked}")
 
         return ReturnResult(
             id=return_request.id,
@@ -190,7 +190,7 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
         )
     else:
         failure_msg = getattr(processing_result, 'message', 'Unknown error') if processing_result else 'No result returned'
-        yield ctx.call_activity(notify_return, input=f"❌ Return processing failed: {failure_msg}")
+        yield ctx.call_activity(announce_return_processing_failed, input=f"❌ Return processing failed: {failure_msg}")
 
         return ReturnResult(
             id=return_request.id,
@@ -209,14 +209,14 @@ def process_defective_return_workflow(ctx: wf.DaprWorkflowContext, return_reques
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
 
-    yield ctx.call_activity(notify_return, input=f"🔧 Processing DEFECTIVE return for {return_request.item}")
+    yield ctx.call_activity(announce_defective_return_started, input=f"🔧 Processing DEFECTIVE return for {return_request.item}")
 
     # For defective items, we provide full refund without restocking
-    yield ctx.call_activity(notify_return, input=f"💳 Processing full refund (defective item)")
-    refund_result = yield ctx.call_activity(process_refund, input=return_request)
+    yield ctx.call_activity(announce_defective_refund_processing, input=f"💳 Processing full refund (defective item)")
+    refund_result = yield ctx.call_activity(process_return_refund, input=return_request)
 
     if not refund_result.success:
-        yield ctx.call_activity(notify_return, input=f"❌ Refund failed: {refund_result.message}")
+        yield ctx.call_activity(announce_defective_refund_failed, input=f"❌ Refund failed: {refund_result.message}")
         return ReturnResult(
             id=return_request.id,
             success=False,
@@ -226,7 +226,7 @@ def process_defective_return_workflow(ctx: wf.DaprWorkflowContext, return_reques
             restocked=False
         )
 
-    yield ctx.call_activity(notify_return, input=f"✅ Defective return processed - item will be disposed of")
+    yield ctx.call_activity(announce_defective_return_completed, input=f"✅ Defective return processed - item will be disposed of")
 
     return ReturnResult(
         id=return_request.id,
@@ -245,14 +245,14 @@ def process_standard_return_workflow(ctx: wf.DaprWorkflowContext, return_request
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
 
-    yield ctx.call_activity(notify_return, input=f"📦 Processing STANDARD return for {return_request.item}")
+    yield ctx.call_activity(announce_standard_return_started, input=f"📦 Processing STANDARD return for {return_request.item}")
 
     # Process refund
-    yield ctx.call_activity(notify_return, input=f"💳 Processing refund")
-    refund_result = yield ctx.call_activity(process_refund, input=return_request)
+    yield ctx.call_activity(announce_standard_refund_processing, input=f"💳 Processing refund")
+    refund_result = yield ctx.call_activity(process_return_refund, input=return_request)
 
     if not refund_result.success:
-        yield ctx.call_activity(notify_return, input=f"❌ Refund failed: {refund_result.message}")
+        yield ctx.call_activity(announce_standard_refund_failed, input=f"❌ Refund failed: {refund_result.message}")
         return ReturnResult(
             id=return_request.id,
             success=False,
@@ -263,13 +263,13 @@ def process_standard_return_workflow(ctx: wf.DaprWorkflowContext, return_request
         )
 
     # Restock inventory
-    yield ctx.call_activity(notify_return, input=f"📋 Restocking inventory")
-    restock_result = yield ctx.call_activity(restock_inventory, input=return_request)
+    yield ctx.call_activity(announce_standard_restocking_started, input=f"📋 Restocking inventory")
+    restock_result = yield ctx.call_activity(restock_returned_inventory, input=return_request)
 
     if not restock_result:
-        yield ctx.call_activity(notify_return, input=f"⚠️ Warning: Refund processed but inventory restock failed")
+        yield ctx.call_activity(announce_standard_restocking_warning, input=f"⚠️ Warning: Refund processed but inventory restock failed")
 
-    yield ctx.call_activity(notify_return, input=f"✅ Standard return processed successfully")
+    yield ctx.call_activity(announce_standard_return_completed, input=f"✅ Standard return processed successfully")
 
     return ReturnResult(
         id=return_request.id,
@@ -288,20 +288,20 @@ def process_expedited_return_workflow(ctx: wf.DaprWorkflowContext, return_reques
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
 
-    yield ctx.call_activity(notify_return, input=f"⚡ Processing EXPEDITED return for {return_request.item}")
+    yield ctx.call_activity(announce_expedited_return_started, input=f"⚡ Processing EXPEDITED return for {return_request.item}")
 
     # Process refund and restock in parallel for speed
-    yield ctx.call_activity(notify_return, input=f"🚀 Processing refund and inventory restock in parallel")
+    yield ctx.call_activity(announce_expedited_parallel_processing, input=f"🚀 Processing refund and inventory restock in parallel")
 
-    refund_task = ctx.call_activity(process_refund, input=return_request)
-    restock_task = ctx.call_activity(restock_inventory, input=return_request)
+    refund_task = ctx.call_activity(process_return_refund, input=return_request)
+    restock_task = ctx.call_activity(restock_returned_inventory, input=return_request)
 
     # Wait for both to complete
     results = yield wf.when_all([refund_task, restock_task])
     refund_result, restock_result = results
 
     if not refund_result.success:
-        yield ctx.call_activity(notify_return, input=f"❌ Expedited refund failed: {refund_result.message}")
+        yield ctx.call_activity(announce_expedited_refund_failed, input=f"❌ Expedited refund failed: {refund_result.message}")
         return ReturnResult(
             id=return_request.id,
             success=False,
@@ -311,7 +311,7 @@ def process_expedited_return_workflow(ctx: wf.DaprWorkflowContext, return_reques
             restocked=False
         )
 
-    yield ctx.call_activity(notify_return, input=f"✅ Expedited return processed in parallel")
+    yield ctx.call_activity(announce_expedited_return_completed, input=f"✅ Expedited return processed in parallel")
 
     return ReturnResult(
         id=return_request.id,
@@ -322,10 +322,10 @@ def process_expedited_return_workflow(ctx: wf.DaprWorkflowContext, return_reques
         restocked=restock_result
     )
 
-# Activity Functions
-def notify_return(ctx: wf.WorkflowActivityContext, message: str):
-    """Activity to send notifications for return processing"""
-    logging.info(f"Return Notification: {message}")
+# Activity Functions - Stage-Specific Notification Activities
+def announce_return_request_received(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return request has been received"""
+    logging.info(f"[RETURN RECEIVED] {message}")
     with DaprClient() as d:
         d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
             "order_id": ctx.workflow_id,
@@ -333,7 +333,291 @@ def notify_return(ctx: wf.WorkflowActivityContext, message: str):
             "data-content-type": "application/json"
         }))
 
-def validate_return_request(_, return_request: ReturnRequest) -> ValidationResult:
+def announce_return_details_logged(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return details have been logged"""
+    logging.info(f"[RETURN DETAILS] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_validation_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return validation has started"""
+    logging.info(f"[VALIDATION START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_validation_passed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return validation passed"""
+    logging.info(f"[VALIDATION OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_validation_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return validation failed"""
+    logging.info(f"[VALIDATION FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_approval_required(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return approval is required"""
+    logging.info(f"[APPROVAL REQ] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_approval_received(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return approval was received"""
+    logging.info(f"[APPROVAL OK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_approval_rejected(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return approval was rejected"""
+    logging.info(f"[APPROVAL REJECT] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_approval_timeout(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return approval timeout"""
+    logging.info(f"[APPROVAL TIMEOUT] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_type_determination(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return type determination"""
+    logging.info(f"[TYPE DETERMINATION] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_child_workflow_spawned(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce child workflow has been spawned"""
+    logging.info(f"[CHILD SPAWN] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_processing_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return processing completed"""
+    logging.info(f"[RETURN COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_processing_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return processing failed"""
+    logging.info(f"[RETURN FAILED] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_refund_summary(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return refund summary"""
+    logging.info(f"[REFUND SUMMARY] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_return_inventory_summary(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce return inventory summary"""
+    logging.info(f"[INVENTORY SUMMARY] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Defective Return Notification Activities
+def announce_defective_return_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce defective return processing started"""
+    logging.info(f"[DEFECTIVE START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_defective_refund_processing(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce defective refund processing"""
+    logging.info(f"[DEFECTIVE REFUND] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_defective_refund_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce defective refund failed"""
+    logging.info(f"[DEFECTIVE REFUND FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_defective_return_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce defective return completed"""
+    logging.info(f"[DEFECTIVE COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Standard Return Notification Activities
+def announce_standard_return_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard return processing started"""
+    logging.info(f"[STANDARD START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_standard_refund_processing(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard refund processing"""
+    logging.info(f"[STANDARD REFUND] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_standard_refund_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard refund failed"""
+    logging.info(f"[STANDARD REFUND FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_standard_restocking_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard restocking started"""
+    logging.info(f"[STANDARD RESTOCK] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_standard_restocking_warning(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard restocking warning"""
+    logging.info(f"[STANDARD RESTOCK WARN] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_standard_return_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce standard return completed"""
+    logging.info(f"[STANDARD COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Expedited Return Notification Activities
+def announce_expedited_return_started(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce expedited return processing started"""
+    logging.info(f"[EXPEDITED START] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_expedited_parallel_processing(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce expedited parallel processing"""
+    logging.info(f"[EXPEDITED PARALLEL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_expedited_refund_failed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce expedited refund failed"""
+    logging.info(f"[EXPEDITED REFUND FAIL] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+def announce_expedited_return_completed(ctx: wf.WorkflowActivityContext, message: str):
+    """Activity to announce expedited return completed"""
+    logging.info(f"[EXPEDITED COMPLETE] {message}")
+    with DaprClient() as d:
+        d.publish_event(PUBSUB_NAME, TOPIC_NAME, json.dumps({
+            "order_id": ctx.workflow_id,
+            "message": f"[RETURN] {message}",
+            "data-content-type": "application/json"
+        }))
+
+# Business Logic Activities (Renamed for Clarity)
+def validate_return_eligibility(_, return_request: ReturnRequest) -> ValidationResult:
     """Activity to validate if a return request is eligible"""
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
@@ -365,7 +649,7 @@ def validate_return_request(_, return_request: ReturnRequest) -> ValidationResul
         requires_approval=requires_approval
     )
 
-def process_refund(_, return_request: ReturnRequest) -> RefundResult:
+def process_return_refund(_, return_request: ReturnRequest) -> RefundResult:
     """Activity to process refund through payments service"""
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
@@ -412,7 +696,7 @@ def process_refund(_, return_request: ReturnRequest) -> RefundResult:
                 amount=0.0
             )
 
-def restock_inventory(_, return_request: ReturnRequest) -> bool:
+def restock_returned_inventory(_, return_request: ReturnRequest) -> bool:
     """Activity to restock inventory for returned items"""
     if isinstance(return_request, dict):
         return_request = ReturnRequest(**return_request)
@@ -586,10 +870,49 @@ def main():
     wf_runtime.register_workflow(process_defective_return_workflow)
     wf_runtime.register_workflow(process_standard_return_workflow)
     wf_runtime.register_workflow(process_expedited_return_workflow)
-    wf_runtime.register_activity(notify_return)
-    wf_runtime.register_activity(validate_return_request)
-    wf_runtime.register_activity(process_refund)
-    wf_runtime.register_activity(restock_inventory)
+
+    # Register main workflow notification activities
+    wf_runtime.register_activity(announce_return_request_received)
+    wf_runtime.register_activity(announce_return_details_logged)
+    wf_runtime.register_activity(announce_return_validation_started)
+    wf_runtime.register_activity(announce_return_validation_passed)
+    wf_runtime.register_activity(announce_return_validation_failed)
+    wf_runtime.register_activity(announce_return_approval_required)
+    wf_runtime.register_activity(announce_return_approval_received)
+    wf_runtime.register_activity(announce_return_approval_rejected)
+    wf_runtime.register_activity(announce_return_approval_timeout)
+    wf_runtime.register_activity(announce_return_type_determination)
+    wf_runtime.register_activity(announce_return_child_workflow_spawned)
+    wf_runtime.register_activity(announce_return_processing_completed)
+    wf_runtime.register_activity(announce_return_processing_failed)
+    wf_runtime.register_activity(announce_return_refund_summary)
+    wf_runtime.register_activity(announce_return_inventory_summary)
+
+    # Register defective return notification activities
+    wf_runtime.register_activity(announce_defective_return_started)
+    wf_runtime.register_activity(announce_defective_refund_processing)
+    wf_runtime.register_activity(announce_defective_refund_failed)
+    wf_runtime.register_activity(announce_defective_return_completed)
+
+    # Register standard return notification activities
+    wf_runtime.register_activity(announce_standard_return_started)
+    wf_runtime.register_activity(announce_standard_refund_processing)
+    wf_runtime.register_activity(announce_standard_refund_failed)
+    wf_runtime.register_activity(announce_standard_restocking_started)
+    wf_runtime.register_activity(announce_standard_restocking_warning)
+    wf_runtime.register_activity(announce_standard_return_completed)
+
+    # Register expedited return notification activities
+    wf_runtime.register_activity(announce_expedited_return_started)
+    wf_runtime.register_activity(announce_expedited_parallel_processing)
+    wf_runtime.register_activity(announce_expedited_refund_failed)
+    wf_runtime.register_activity(announce_expedited_return_completed)
+
+    # Register business logic activities
+    wf_runtime.register_activity(validate_return_eligibility)
+    wf_runtime.register_activity(process_return_refund)
+    wf_runtime.register_activity(restock_returned_inventory)
+
     wf_runtime.start()  # non-blocking
 
     # Start the Flask app server

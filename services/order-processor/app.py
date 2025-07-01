@@ -3,12 +3,14 @@ import logging
 import os
 import random
 import string
+import time
 import dapr.ext.workflow as wf
 from dapr.clients import DaprClient
 from flask import Flask, request, url_for
 from markupsafe import escape
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
 
 APP_PORT = os.getenv("APP_PORT", "3006")
 PUBSUB_NAME = os.getenv("PUBSUB_NAME", "pubsub")
@@ -17,7 +19,20 @@ TOPIC_NAME = os.getenv("TOPIC_NAME", "notifications")
 APPROVAL_THRESHOLD = 1000.0
 APPROVAL_TIMEOUT = timedelta(hours=24)
 
+# Chaos engineering configuration
+ENABLE_CHAOS_DETECTION = os.getenv("ENABLE_CHAOS_DETECTION", "true").lower() == "true"
+CHAOS_ENGINEER_URL = os.getenv("CHAOS_ENGINEER_URL", "http://localhost:3010")
+
 app = Flask(__name__)
+
+# Circuit breaker configuration
+circuit_breaker_states = {
+    "inventory": {"failures": 0, "last_failure": None, "is_open": False},
+    "payments": {"failures": 0, "last_failure": None, "is_open": False},
+    "shipping": {"failures": 0, "last_failure": None, "is_open": False}
+}
+CIRCUIT_BREAKER_THRESHOLD = 3
+CIRCUIT_BREAKER_TIMEOUT = timedelta(minutes=1)
 
 
 @dataclass
@@ -50,6 +65,90 @@ class PaymentResult:
     success: bool
     message: str
 
+@dataclass
+class RetryConfig:
+    max_attempts: int = 3
+    base_delay_ms: int = 100
+    backoff_multiplier: float = 2.0
+    max_delay_ms: int = 5000
+
+def should_simulate_failure(service_name: str) -> bool:
+    """Check if we should simulate a failure for chaos engineering"""
+    if not ENABLE_CHAOS_DETECTION:
+        return False
+
+    # Simple random failure simulation - in a real system, this would check
+    # with the chaos engineering service for active failure scenarios
+    return random.random() < 0.1  # 10% failure rate for demo
+
+def is_circuit_breaker_open(service_name: str) -> bool:
+    """Check if circuit breaker is open for a service"""
+    state = circuit_breaker_states.get(service_name, {})
+
+    if not state.get("is_open", False):
+        return False
+
+    # Check if timeout has expired
+    last_failure = state.get("last_failure")
+    if last_failure and datetime.now() - last_failure > CIRCUIT_BREAKER_TIMEOUT:
+        # Reset circuit breaker
+        circuit_breaker_states[service_name] = {"failures": 0, "last_failure": None, "is_open": False}
+        return False
+
+    return True
+
+def record_service_failure(service_name: str):
+    """Record a service failure for circuit breaker logic"""
+    if service_name not in circuit_breaker_states:
+        circuit_breaker_states[service_name] = {"failures": 0, "last_failure": None, "is_open": False}
+
+    state = circuit_breaker_states[service_name]
+    state["failures"] += 1
+    state["last_failure"] = datetime.now()
+
+    if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+        state["is_open"] = True
+        logging.warning(f"Circuit breaker opened for service: {service_name}")
+
+def record_service_success(service_name: str):
+    """Record a service success - reset failure count"""
+    if service_name in circuit_breaker_states:
+        circuit_breaker_states[service_name]["failures"] = 0
+
+def retry_with_backoff(func, retry_config: RetryConfig, service_name: str, *args, **kwargs):
+    """Execute a function with exponential backoff retry logic"""
+    last_exception = None
+
+    for attempt in range(retry_config.max_attempts):
+        try:
+            # Check circuit breaker
+            if is_circuit_breaker_open(service_name):
+                raise Exception(f"Circuit breaker is open for service: {service_name}")
+
+            # Simulate chaos engineering failure
+            if should_simulate_failure(service_name):
+                raise Exception(f"Simulated failure for service: {service_name} (chaos engineering)")
+
+            result = func(*args, **kwargs)
+            record_service_success(service_name)
+            return result
+
+        except Exception as e:
+            last_exception = e
+            record_service_failure(service_name)
+
+            if attempt < retry_config.max_attempts - 1:
+                delay_ms = min(
+                    retry_config.base_delay_ms * (retry_config.backoff_multiplier ** attempt),
+                    retry_config.max_delay_ms
+                )
+                logging.warning(f"Attempt {attempt + 1} failed for {service_name}: {str(e)}. Retrying in {delay_ms}ms...")
+                time.sleep(delay_ms / 1000.0)
+            else:
+                logging.error(f"All {retry_config.max_attempts} attempts failed for {service_name}: {str(e)}")
+
+    raise last_exception
+
 # Dapr Workflow Definition for Order Processing
 
 def process_order_workflow(ctx: wf.DaprWorkflowContext, order: Order):
@@ -57,7 +156,7 @@ def process_order_workflow(ctx: wf.DaprWorkflowContext, order: Order):
 
     # Call into the inventory service to reserve the items in this order
     result = yield ctx.call_activity(reserve_inventory, input=order)
-    
+
     if not result.success:
         yield ctx.call_activity(notify, input=f"Failed to reserve inventory: {result.message}")
         return OrderResult(order.id, False, result.message)
@@ -133,34 +232,52 @@ def notify(ctx: wf.WorkflowActivityContext, message: str):
 
 
 def reserve_inventory(_, order: Order) -> InventoryResult:
-    logging.info(f"Reserving inventory for order: {order}")
-    with DaprClient() as d:
-        resp = d.invoke_method("inventory", "api/v1/inventory/reserve",  http_verb="POST",  data=json.dumps(order.__dict__))
-        if resp.status_code != 200:
-            raise Exception(f"Error calling inventory service: {resp.status_code}")
-        inventory_result = InventoryResult(**json.loads(resp.data.decode("utf-8")))
-        logging.info(f"Inventory result: {inventory_result}")
-        return inventory_result
+    """Reserve inventory with retry logic and circuit breaker"""
+    def _reserve_inventory_call():
+        logging.info(f"Reserving inventory for order: {order}")
+        with DaprClient() as d:
+            resp = d.invoke_method("inventory", "api/v1/inventory/reserve",  http_verb="POST",  data=json.dumps(order.__dict__))
+            if resp.status_code != 200:
+                raise Exception(f"Error calling inventory service: {resp.status_code}")
+            inventory_result = InventoryResult(**json.loads(resp.data.decode("utf-8")))
+            logging.info(f"Inventory result: {inventory_result}")
+            return inventory_result
+
+    # Use retry with backoff for resilience
+    retry_config = RetryConfig(max_attempts=3, base_delay_ms=200, backoff_multiplier=2.0)
+    return retry_with_backoff(_reserve_inventory_call, retry_config, "inventory")
 
 def submit_order_to_shipping(_, order: Order):
-    logging.info(f"Submitting order to shipping: {order}")
-    with DaprClient() as d:
-        resp = d.invoke_method("shipping", "shipping/ship",  http_verb="POST",  data=json.dumps(order.__dict__))
-        if resp.status_code != 200:
-            raise Exception(f"Error calling shipping service: {resp.status_code}: {resp.text()}")
+    """Submit order to shipping with retry logic and circuit breaker"""
+    def _submit_shipping_call():
+        logging.info(f"Submitting order to shipping: {order}")
+        with DaprClient() as d:
+            resp = d.invoke_method("shipping", "shipping/ship",  http_verb="POST",  data=json.dumps(order.__dict__))
+            if resp.status_code != 200:
+                raise Exception(f"Error calling shipping service: {resp.status_code}: {resp.text()}")
+
+    # Use retry with backoff for resilience
+    retry_config = RetryConfig(max_attempts=4, base_delay_ms=300, backoff_multiplier=1.5)
+    return retry_with_backoff(_submit_shipping_call, retry_config, "shipping")
 
 def submit_payment(_, order: Order) -> PaymentResult:
-    logging.info(f"Submitting payment for order: {order}")
-    with DaprClient() as d:
-        resp = d.invoke_method("payments", "api/v1/payments",  http_verb="POST",  data=json.dumps(order.__dict__))
-        payment_result = PaymentResult(**json.loads(resp.data.decode("utf-8")))
+    """Submit payment with retry logic and circuit breaker"""
+    def _submit_payment_call():
+        logging.info(f"Submitting payment for order: {order}")
+        with DaprClient() as d:
+            resp = d.invoke_method("payments", "api/v1/payments",  http_verb="POST",  data=json.dumps(order.__dict__))
+            payment_result = PaymentResult(**json.loads(resp.data.decode("utf-8")))
 
-        if resp._status_code != 201:
-            if 'declined' not in payment_result.message:
-                raise Exception(f"Error calling payment service: {resp.status_code}: {resp.text()}")
+            if resp._status_code != 201:
+                if 'declined' not in payment_result.message:
+                    raise Exception(f"Error calling payment service: {resp.status_code}: {resp.text()}")
 
-        logging.info(f"Payment result: {payment_result}")
-        return payment_result
+            logging.info(f"Payment result: {payment_result}")
+            return payment_result
+
+    # Use retry with backoff for resilience (fewer retries for payments to avoid double-charging)
+    retry_config = RetryConfig(max_attempts=2, base_delay_ms=500, backoff_multiplier=2.0)
+    return retry_with_backoff(_submit_payment_call, retry_config, "payments")
 
 def refund_payment(_, order: Order):
     logging.info(f"Refunding payment for order: {order}")
@@ -202,7 +319,7 @@ def submit_order():
         instance_id=order.id)
 
     logging.info(f"Started workflow instance: {instance_id}")
-    
+
     return json.dumps({"instance_id": instance_id}), 202, {
         'Content-Type': 'application/json',
         'Location': url_for('check_order_status', order_id=instance_id, _external=True)
@@ -272,6 +389,25 @@ def approve_order(order_id):
 @app.route("/healthz", methods=["GET"])
 def hello():
     return f"Hello from {__name__}", 200
+
+@app.route("/circuit-breakers", methods=["GET"])
+def get_circuit_breaker_status():
+    """Get circuit breaker status for debugging"""
+    status = {}
+    for service, state in circuit_breaker_states.items():
+        status[service] = {
+            "is_open": state.get("is_open", False),
+            "failure_count": state.get("failures", 0),
+            "last_failure": state.get("last_failure").isoformat() if state.get("last_failure") else None,
+            "threshold": CIRCUIT_BREAKER_THRESHOLD,
+            "timeout_minutes": CIRCUIT_BREAKER_TIMEOUT.total_seconds() / 60
+        }
+
+    return {
+        "circuit_breakers": status,
+        "chaos_detection_enabled": ENABLE_CHAOS_DETECTION,
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 def main():

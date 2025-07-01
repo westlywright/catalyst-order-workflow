@@ -1,0 +1,333 @@
+### =============================================
+### CHAOS ENGINEERING COMPREHENSIVE DEMO SCRIPT
+### =============================================
+### PURPOSE: Demonstrates advanced failure simulation and debugging features
+### AUDIENCE: Perfect for showcasing dashboard debugging capabilities
+### SCENARIOS: Covers retry patterns, circuit breakers, cascading failures
+### MONITORING: Rich diagnostic events for real-time dashboard consumption
+### DURATION: Allow 10-15 minutes for full demonstration
+### =============================================
+
+### =============================================
+### PHASE 1: BASELINE SYSTEM HEALTH ASSESSMENT
+### =============================================
+
+### 1. Check initial chaos engineering status
+### Expected: chaos_enabled=true, active_failures=0, total_scenarios=0
+GET http://localhost:3010/chaos/status
+
+### 2. Check circuit breaker states (should be all healthy initially)
+### Expected: All services show "closed" state, failure_count=0
+GET http://localhost:3006/circuit-breakers
+
+### 3. Verify all services are healthy before injecting failures
+### Expected: All services return 200 OK status
+GET http://localhost:3010/health
+
+### =============================================
+### PHASE 2: SCENARIO CREATION & CONFIGURATION
+### =============================================
+
+### 4. Create a comprehensive database failure scenario
+### PURPOSE: Tests inventory service resilience and cascade effects
+### MONITORING: Watch for database_error events in dashboard
+// @name database_failure_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Database Cascade Failure Test",
+  "description": "Simulate database failures cascading through inventory and payment services with 80% failure rate",
+  "failure_type": "database_error",
+  "target_service": "inventory",
+  "failure_rate": 0.8,
+  "duration_seconds": 120,
+  "enabled": true
+}
+
+### 5. Create a payment service timeout scenario
+### PURPOSE: Demonstrates timeout handling and retry patterns
+### MONITORING: Watch for exponential backoff retry attempts
+// @name payment_timeout_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Payment Service Timeout",
+  "description": "Simulate timeout failures in payment processing with retry pattern demonstration",
+  "failure_type": "timeout",
+  "target_service": "payments",
+  "failure_rate": 0.7,
+  "duration_seconds": 90,
+  "enabled": true
+}
+
+### 6. Create a network timeout scenario for additional testing
+### PURPOSE: Tests network-level failures and circuit breaker triggers
+### MONITORING: Observe circuit breaker state changes
+// @name network_timeout_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Network Infrastructure Timeout",
+  "description": "Simulate network-level timeouts affecting multiple services simultaneously",
+  "failure_type": "network_error",
+  "target_service": "order-processor",
+  "failure_rate": 0.6,
+  "duration_seconds": 75,
+  "enabled": true
+}
+
+### 7. Create a shipping cascade failure scenario
+### PURPOSE: Demonstrates failure isolation and containment
+### MONITORING: Track cascade propagation through service dependencies
+// @name shipping_cascade_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Multi-Service Cascade Failure",
+  "description": "Test how failures cascade from shipping through the entire order pipeline at 95% failure rate",
+  "failure_type": "service_unavailable",
+  "target_service": "shipping",
+  "failure_rate": 0.95,
+  "duration_seconds": 60,
+  "enabled": true
+}
+
+### =============================================
+### PHASE 3: WORKFLOW EXECUTION & MONITORING
+### =============================================
+
+### 8. Execute database failure scenario
+### EXPECTED WORKFLOW: Health check → Failure injection → Retry testing → Circuit breaker → Recovery
+### MONITORING: Real-time [CHAOS] events in notifications UI (http://localhost:8080)
+@database_scenario_id = {{database_failure_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{database_scenario_id}}/execute
+Content-Type: application/json
+
+### 9. Execute payment timeout scenario (demonstrates retry patterns)
+### EXPECTED BEHAVIOR: 3 retry rounds × 3 retry policies = 9 total test cycles
+### RETRY POLICIES: exponential_backoff, fixed_interval, linear_backoff
+@payment_scenario_id = {{payment_timeout_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{payment_scenario_id}}/execute
+Content-Type: application/json
+
+### =============================================
+### PHASE 4: LIVE SYSTEM STRESS TESTING
+### =============================================
+
+### 10. Create orders during chaos scenarios to observe real impact
+### PURPOSE: See how active failures affect actual business workflows
+### MONITORING: Watch order processing logs for retry attempts and failures
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "chaos_demo_user_1",
+  "item": "resilience_test_widget",
+  "total": 150.00
+}
+
+### 11. Create high-value order to test approval workflow under chaos
+### PURPOSE: Test external event handling (approval) during system stress
+### MONITORING: Observe if approval workflow is affected by chaos scenarios
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "chaos_demo_user_2",
+  "item": "premium_chaos_test_widget",
+  "total": 1200.00
+}
+
+### =============================================
+### PHASE 5: QUICK FAILURE INJECTION TESTS
+### =============================================
+
+### 12. Quick failure injection - Network error in order processor
+### PURPOSE: Immediate failure testing without full workflow overhead
+### DURATION: 20 seconds of 80% failure rate
+### MONITORING: Watch circuit breakers open quickly due to high failure rate
+POST http://localhost:3010/chaos/inject/network_error/order-processor
+Content-Type: application/json
+
+{
+  "failure_rate": 0.8,
+  "duration_seconds": 20
+}
+
+### 13. Quick failure injection - Memory error in inventory
+### PURPOSE: Test memory-related failure patterns
+### DURATION: 15 seconds of 60% failure rate
+### MONITORING: Observe service degradation in health checks
+POST http://localhost:3010/chaos/inject/memory_error/inventory
+Content-Type: application/json
+
+{
+  "failure_rate": 0.6,
+  "duration_seconds": 15
+}
+
+### 14. Quick failure injection - Rate limiting in payments
+### PURPOSE: Simulate API rate limiting scenarios
+### DURATION: 25 seconds of 90% failure rate
+### MONITORING: High failure rate should trigger circuit breakers rapidly
+POST http://localhost:3010/chaos/inject/rate_limited/payments
+Content-Type: application/json
+
+{
+  "failure_rate": 0.9,
+  "duration_seconds": 25
+}
+
+### =============================================
+### PHASE 6: REAL-TIME MONITORING & DIAGNOSTICS
+### =============================================
+
+### 15. Monitor circuit breaker states during active failures
+### PURPOSE: Live demonstration of circuit breaker pattern in action
+### EXPECTED: Should show "open" or "half-open" states with failure counts
+GET http://localhost:3006/circuit-breakers
+
+### 16. Get comprehensive diagnostic events for dashboard
+### PURPOSE: Rich structured data perfect for dashboard visualization
+### DATA: Events with correlation IDs, severity levels, execution times
+GET http://localhost:3010/chaos/events?limit=50
+
+### 17. Filter critical error events for alerting systems
+### PURPOSE: Demonstrate filtering for high-priority dashboard alerts
+### USE CASE: Critical error monitoring and alerting
+GET http://localhost:3010/chaos/events?severity=error&limit=25
+
+### 18. Get warning events for operational monitoring
+### PURPOSE: Medium-priority events for operational awareness
+### USE CASE: Service degradation monitoring
+GET http://localhost:3010/chaos/events?severity=warning&limit=25
+
+### 19. Get info events for detailed troubleshooting
+### PURPOSE: Detailed workflow progression for debugging
+### USE CASE: End-to-end workflow tracing and analysis
+GET http://localhost:3010/chaos/events?severity=info&limit=30
+
+### =============================================
+### PHASE 7: CORRELATION & TRACING ANALYSIS
+### =============================================
+
+### 20. Filter events by correlation ID for end-to-end tracing
+### PURPOSE: Demonstrate complete workflow tracing capabilities
+### BENEFIT: Full context from scenario start to completion
+### NOTE: Replace {{database_scenario_id}} with actual correlation ID from executed scenarios
+GET http://localhost:3010/chaos/events?correlation_id={{database_scenario_id}}&limit=100
+
+### 21. Get all active chaos scenarios with expiration times
+### PURPOSE: Show currently running failure scenarios
+### MONITORING: Track which failures are still active
+GET http://localhost:3010/chaos/scenarios
+
+### 22. Get specific scenario details for deep analysis
+### PURPOSE: Detailed configuration and execution status
+### USE CASE: Scenario configuration verification and debugging
+@payment_scenario_id = {{payment_timeout_scenario.response.body.id}}
+
+GET http://localhost:3010/chaos/scenarios/{{payment_scenario_id}}
+
+### =============================================
+### PHASE 8: ADVANCED FAILURE SCENARIOS
+### =============================================
+
+### 23. Execute network timeout scenario for compound testing
+### PURPOSE: Layer multiple failure types for complex scenarios
+### MONITORING: Observe interaction between different failure patterns
+@network_scenario_id = {{network_timeout_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{network_scenario_id}}/execute
+Content-Type: application/json
+
+### 24. Execute shipping cascade scenario for dependency testing
+### PURPOSE: Demonstrate failure propagation through service mesh
+### MONITORING: Track cascade steps and containment effectiveness
+@shipping_scenario_id = {{shipping_cascade_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{shipping_scenario_id}}/execute
+Content-Type: application/json
+
+### 25. Final system health check
+### PURPOSE: Verify chaos status and active scenario count
+### EXPECTED: Multiple active_failures during concurrent testing
+GET http://localhost:3010/chaos/status
+
+### =============================================
+### DASHBOARD DEBUGGING DEMONSTRATION POINTS
+### =============================================
+###
+### 🎯 KEY FEATURES TO HIGHLIGHT IN DASHBOARDS:
+###
+### 1. CORRELATION TRACKING:
+###    - All events share correlation IDs for end-to-end tracing
+###    - Complete workflow visibility from start to finish
+###    - Cross-service request tracking capabilities
+###
+### 2. SEVERITY-BASED ALERTING:
+###    - INFO: Workflow progression and debugging details
+###    - WARNING: Service degradation and retry attempts
+###    - ERROR: Failure events requiring attention
+###    - CRITICAL: System-wide failures needing immediate response
+###
+### 3. RICH CONTEXTUAL DATA:
+###    - Detailed debugging information in event details
+###    - Execution times for performance analysis
+###    - Retry attempt counts and strategies
+###    - Service health scores and error rates
+###
+### 4. REAL-TIME UPDATES:
+###    - Events published to pub/sub for live dashboard updates
+###    - WebSocket integration for instant notifications
+###    - Live status updates in React notifications UI
+###
+### 5. CIRCUIT BREAKER MONITORING:
+###    - Live status of service health and failure counts
+###    - State transitions (closed → open → half-open)
+###    - Failure threshold monitoring and alerts
+###
+### 6. RETRY PATTERN VISUALIZATION:
+###    - Exponential backoff progression demonstration
+###    - Fixed interval vs linear backoff comparison
+###    - Success/failure rates across retry strategies
+###
+### 7. CASCADE FAILURE ANALYSIS:
+###    - Track how failures propagate through services
+###    - Dependency mapping and impact assessment
+###    - Containment effectiveness measurement
+###
+### 8. RECOVERY MONITORING:
+###    - System recovery time measurements
+###    - Circuit breaker reset detection
+###    - Service health restoration tracking
+###
+### 9. PERFORMANCE METRICS:
+###    - Response time degradation during failures
+###    - Throughput impact measurement
+###    - Resource utilization under stress
+###
+### 10. HEALTH MONITORING:
+###     - Before/after system health comparisons
+###     - Service availability percentages
+###     - Multi-dimensional health scoring
+###
+### =============================================
+### 🚀 DEMO EXECUTION GUIDE:
+###
+### TIMING: Execute scenarios in phases with 30-60 second delays
+### MONITORING: Keep notifications UI (localhost:8080) open during demo
+### OBSERVATION: Watch circuit-breakers endpoint for state changes
+### ANALYSIS: Use correlation IDs to trace complete workflows
+### CLEANUP: Scenarios automatically expire based on duration_seconds
+###
+### EXPECTED DEMO DURATION: 10-15 minutes for complete demonstration
+### CONCURRENT SCENARIOS: Up to 4 scenarios can run simultaneously
+### NOTIFICATION RATE: Expect 20-50 events per minute during active chaos
+### =============================================

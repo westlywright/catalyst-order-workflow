@@ -21,3 +21,6 @@ pip3 install -r requirements.txt
 
 cd ../returns
 pip3 install -r requirements.txt
+
+cd ../chaos-engineer
+pip3 install -r requirements.txt
