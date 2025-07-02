@@ -1,0 +1,309 @@
+### =============================================
+### RETURN WORKFLOWS COMPREHENSIVE DEMO
+### =============================================
+### PURPOSE: Demonstrates workflow chaining and advanced state management
+### AUDIENCE: Perfect for showcasing return processing and external event handling
+### SCENARIOS: Covers standard, defective, expedited, and high-value returns
+### MONITORING: Real-time notifications for return workflow tracking
+### DURATION: Allow 8-12 minutes for full demonstration
+### =============================================
+
+### =============================================
+### PHASE 1: SYSTEM PREPARATION
+### =============================================
+
+### 1. Health check for returns service
+### Expected: Service should be running and healthy
+GET http://localhost:3008/health
+
+### 2. Check inventory levels (for restocking validation)
+### Expected: Current inventory state for return processing
+GET http://localhost:3002/api/v1/inventory
+
+### =============================================
+### PHASE 2: STANDARD RETURN PROCESSING
+### =============================================
+
+### 3. Submit a standard return request (sequential processing)
+### PURPOSE: Demonstrates basic return workflow with validation and processing
+### MONITORING: Watch notifications UI (localhost:8080) for [RETURN] prefixed messages
+### EXPECTED: Return → Validation → Refund → Restock sequence
+// @name standard_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_john_abc123",
+  "customer": "john",
+  "item": "apple",
+  "reason": "wrong_size",
+  "description": "Item was too small",
+  "return_value": 75.0
+}
+
+### 4. Get standard return status
+### PURPOSE: Monitor return workflow progression through states
+### EXPECTED: Shows validation → processing → completion stages
+@standard_return_id = {{standard_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{standard_return_id}}
+
+### =============================================
+### PHASE 3: DEFECTIVE ITEM RETURN (NO RESTOCKING)
+### =============================================
+
+### 5. Submit a defective item return
+### PURPOSE: Demonstrates defective return child workflow (disposal path)
+### MONITORING: Watch for defective-specific processing notifications
+### EXPECTED: Full refund without inventory restocking (item disposed)
+// @name defective_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_sarah_xyz789",
+  "customer": "sarah",
+  "item": "orange",
+  "reason": "defective",
+  "description": "Item arrived damaged",
+  "return_value": 45.0
+}
+
+### 6. Get defective return status
+### PURPOSE: Verify defective return processing path
+### EXPECTED: Refund processed but no inventory restocking
+@defective_return_id = {{defective_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{defective_return_id}}
+
+### =============================================
+### PHASE 4: HIGH-VALUE RETURN (APPROVAL WORKFLOW)
+### =============================================
+
+### 7. Submit a high-value return (requires manager approval)
+### PURPOSE: Demonstrates external event handling with timeout
+### MONITORING: Watch for approval requirement notifications
+### EXPECTED: Return waits for external approval event (24-hour timeout)
+// @name high_value_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_alice_def456",
+  "customer": "alice",
+  "item": "kiwi",
+  "reason": "not_as_described",
+  "description": "Product quality not as expected",
+  "return_value": 850.0
+}
+
+### 8. Get high-value return status (check for approval requirement)
+### PURPOSE: Verify return is waiting for manager approval
+### EXPECTED: Status shows pending approval with timeout information
+@high_value_return_id = {{high_value_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{high_value_return_id}}
+
+### 9. Approve the high-value return
+### PURPOSE: Demonstrate external event handling for workflow continuation
+### EXPECTED: Return proceeds with processing after approval
+@high_value_return_id = {{high_value_return.response.body.instance_id}}
+
+POST http://localhost:3008/returns/{{high_value_return_id}}/approve
+Content-Type: application/json
+
+{
+  "approver": "manager_jane",
+  "approved": true
+}
+
+### 10. Check approved return status
+### PURPOSE: Verify return processing continues after approval
+### EXPECTED: Return moves from pending to processing/completed
+@high_value_return_id = {{high_value_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{high_value_return_id}}
+
+### =============================================
+### PHASE 5: EXPEDITED RETURN (PARALLEL PROCESSING)
+### =============================================
+
+### 11. Submit an expedited return (changed mind - parallel processing)
+### PURPOSE: Demonstrates parallel refund and restocking for fast completion
+### MONITORING: Watch for parallel processing notifications
+### EXPECTED: Refund and inventory restocking happen simultaneously
+// @name expedited_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_bob_ghi789",
+  "customer": "bob",
+  "item": "pear",
+  "reason": "changed_mind",
+  "description": "No longer needed",
+  "return_value": 120.0
+}
+
+### 12. Get expedited return status
+### PURPOSE: Monitor parallel processing completion
+### EXPECTED: Faster completion due to parallel execution
+@expedited_return_id = {{expedited_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{expedited_return_id}}
+
+### =============================================
+### PHASE 6: RETURN APPROVAL REJECTION SCENARIO
+### =============================================
+
+### 13. Submit another high-value return for rejection testing
+### PURPOSE: Demonstrate approval rejection workflow
+### MONITORING: Watch for rejection handling notifications
+// @name rejection_test_return
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_chaos_demo_user_2_ns43g",
+  "customer": "chaos_demo_user_2",
+  "item": "kiwi",
+  "reason": "not_satisfied",
+  "description": "Product did not meet expectations",
+  "return_value": 950.0
+}
+
+### 14. Reject the high-value return
+### PURPOSE: Demonstrate external event rejection handling
+### EXPECTED: Return workflow handles rejection and notifies customer
+@rejection_test_return_id = {{rejection_test_return.response.body.instance_id}}
+
+POST http://localhost:3008/returns/{{rejection_test_return_id}}/approve
+Content-Type: application/json
+
+{
+  "approver": "manager_jane",
+  "approved": false
+}
+
+### 15. Check rejected return status
+### PURPOSE: Verify rejection handling and workflow completion
+### EXPECTED: Return shows rejected status with manager information
+@rejection_test_return_id = {{rejection_test_return.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{rejection_test_return_id}}
+
+### =============================================
+### PHASE 7: COMPREHENSIVE RETURN SCENARIO TESTING
+### =============================================
+
+### 16. Submit multiple return types simultaneously (stress test)
+### PURPOSE: Test concurrent return processing capabilities
+### MONITORING: Observe parallel return workflow handling
+
+// @name concurrent_standard
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_test_user_1",
+  "customer": "test_user_1",
+  "item": "apple",
+  "reason": "wrong_item",
+  "description": "Received wrong product",
+  "return_value": 55.0
+}
+
+### 17. Another concurrent return
+// @name concurrent_defective
+POST http://localhost:3008/returns
+Content-Type: application/json
+
+{
+  "original_order_id": "order_test_user_2",
+  "customer": "test_user_2",
+  "item": "orange",
+  "reason": "defective",
+  "description": "Product was damaged",
+  "return_value": 40.0
+}
+
+### 18. Monitor concurrent processing
+@concurrent_standard_id = {{concurrent_standard.response.body.instance_id}}
+@concurrent_defective_id = {{concurrent_defective.response.body.instance_id}}
+
+GET http://localhost:3008/returns/{{concurrent_standard_id}}
+
+### 19. Monitor second concurrent return
+GET http://localhost:3008/returns/{{concurrent_defective_id}}
+
+### =============================================
+### RETURN WORKFLOW DEMONSTRATION POINTS
+### =============================================
+###
+### 🎯 KEY FEATURES TO HIGHLIGHT:
+###
+### 1. WORKFLOW CHAINING & STATE MANAGEMENT:
+###    - Returns reference and validate against original orders
+###    - Complex state transitions: validation → approval → processing → completion
+###    - Persistent state management throughout multi-step process
+###    - External event integration with timeouts and fallbacks
+###
+### 2. ADVANCED ACTIVITY NAMING:
+###    - announce_return_request_received: Clear workflow entry point
+###    - announce_return_validation_started: Eligibility checking phase
+###    - announce_return_approval_required: High-value return detection
+###    - announce_return_child_workflow_spawned: Type-specific processing
+###    - announce_defective_return_started: Defective item workflow
+###    - announce_standard_refund_processing: Standard return path
+###    - announce_expedited_parallel_processing: Fast-track processing
+###
+### 3. DYNAMIC CHILD WORKFLOWS BY RETURN TYPE:
+###    - DEFECTIVE: Full refund, no restocking (disposal path)
+###    - STANDARD: Sequential refund then inventory restocking
+###    - EXPEDITED: Parallel refund and restocking for speed
+###    - HIGH-VALUE: External approval event handling
+###
+### 4. EXTERNAL EVENT HANDLING:
+###    - Manager approval system for returns >$500
+###    - 24-hour approval timeout with automatic rejection
+###    - Approval/rejection event processing
+###    - Workflow continuation after external events
+###
+### 5. PARALLEL PROCESSING OPTIMIZATION:
+###    - Expedited returns use parallel execution
+###    - Concurrent refund and inventory operations
+###    - Performance optimization for time-sensitive returns
+###    - Resource efficient parallel activity coordination
+###
+### 6. COMPREHENSIVE VALIDATION:
+###    - Time-based return eligibility (30-day window)
+###    - Value threshold validation for approvals
+###    - Business rule enforcement and validation
+###    - Original order reference validation
+###
+### 7. REAL-TIME MONITORING:
+###    - Live notifications with [RETURN] prefix
+###    - State transition tracking and progress updates
+###    - Approval workflow status monitoring
+###    - Child workflow coordination visibility
+###
+### 8. FAILURE HANDLING & COMPENSATION:
+###    - Timeout handling for approval workflows
+###    - Compensation patterns for failed operations
+###    - Graceful degradation for service failures
+###    - Audit trail for approval/rejection decisions
+###
+### =============================================
+### 🚀 DEMO EXECUTION GUIDE:
+###
+### TIMING: Execute requests with 15-20 second delays for observation
+### MONITORING: Keep notifications UI (localhost:8080) open during demo
+### OBSERVATION: Watch for return type-specific processing paths
+### ANALYSIS: Use return IDs to trace complete workflow lifecycle
+### APPROVAL: Use actual return IDs from responses for approval/rejection
+###
+### EXPECTED DEMO DURATION: 8-12 minutes for complete demonstration
+### CONCURRENT RETURNS: Multiple return types can process simultaneously
+### NOTIFICATION RATE: Expect 8-15 events per return workflow
+### APPROVAL TIMEOUT: 24 hours for high-value returns (demo: use manual approval)
+### =============================================

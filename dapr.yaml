@@ -1,6 +1,6 @@
 version: 1
 common:
-  logLevel: verbose
+  logLevel: error
   appLogDestination: "console"
   daprdLogDestination: "console"
   resourcesPaths: ["./resources"]

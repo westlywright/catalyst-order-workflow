@@ -128,7 +128,7 @@ Content-Type: application/json
 
 {
   "customer": "chaos_demo_user_1",
-  "item": "resilience_test_widget",
+  "item": "pear",
   "total": 150.00
 }
 
@@ -140,7 +140,7 @@ Content-Type: application/json
 
 {
   "customer": "chaos_demo_user_2",
-  "item": "premium_chaos_test_widget",
+  "item": "apple",
   "total": 1200.00
 }
 
@@ -330,4 +330,27 @@ GET http://localhost:3010/chaos/status
 ### EXPECTED DEMO DURATION: 10-15 minutes for complete demonstration
 ### CONCURRENT SCENARIOS: Up to 4 scenarios can run simultaneously
 ### NOTIFICATION RATE: Expect 20-50 events per minute during active chaos
+### =============================================
+
+
+### =============================================
+### CIRCUIT BREAKER DEMONSTRATION GUIDE
+### =============================================
+### To properly demonstrate circuit breaker functionality:
+###
+### 1. BASELINE: Run GET /circuit-breakers (should show all closed)
+### 2. START CHAOS: Execute scenarios from chaos-demo.http
+### 3. STRESS TEST: Submit orders above while chaos is active
+### 4. MONITOR: Watch circuit-breakers endpoint for state changes
+### 5. OBSERVE: Note how circuit breakers protect against cascade failures
+###
+### Circuit Breaker States:
+### - CLOSED: Normal operation, requests pass through
+### - OPEN: Too many failures, requests fail fast (no retry)
+### - HALF-OPEN: Testing if service has recovered
+###
+### Expected Behavior During Chaos:
+### - Failure count increases as services fail
+### - State transitions from closed → open after threshold
+### - Fast failures protect system from cascade effects
 ### =============================================

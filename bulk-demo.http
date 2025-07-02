@@ -1,0 +1,204 @@
+### =============================================
+### BULK ORDER PROCESSING COMPREHENSIVE DEMO
+### =============================================
+### PURPOSE: Demonstrates parent-child workflow patterns and parallel processing
+### AUDIENCE: Perfect for showcasing advanced workflow orchestration capabilities
+### SCENARIOS: Covers bulk orders, child workflows, and approval patterns
+### MONITORING: Real-time notifications for parent and child workflow tracking
+### DURATION: Allow 5-10 minutes for full demonstration
+### =============================================
+
+### =============================================
+### PHASE 1: SYSTEM PREPARATION
+### =============================================
+
+### 1. Health check for batch processor service
+### Expected: Service should be running and healthy
+GET http://localhost:3007/health
+
+### 2. Check inventory levels before bulk processing
+### Expected: Sufficient stock for demonstration orders
+GET http://localhost:3002/api/v1/inventory
+
+### 3. Restock inventory if needed for demonstration
+### Purpose: Ensure sufficient stock for bulk order processing
+POST http://localhost:3002/api/v1/inventory/restock
+
+### =============================================
+### PHASE 2: STANDARD BULK ORDER PROCESSING
+### =============================================
+
+### 4. Submit a standard bulk order with multiple items
+### PURPOSE: Demonstrates parent workflow spawning child workflows
+### MONITORING: Watch notifications UI (localhost:8080) for [BULK] prefixed messages
+### EXPECTED: Parent workflow creates child workflows for each item
+// @name bulkorder
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "alice",
+  "items": [
+    {"item": "apple", "quantity": 2, "price": 50.0},
+    {"item": "orange", "quantity": 1, "price": 75.0},
+    {"item": "pear", "quantity": 3, "price": 30.0}
+  ]
+}
+
+### 5. Get bulk order status and child workflow IDs
+### PURPOSE: Monitor parent workflow and track child workflow creation
+### EXPECTED: Response shows parent status and list of child workflow instances
+@bulk_instance_id = {{bulkorder.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{bulk_instance_id}}
+
+### =============================================
+### PHASE 3: HIGH-VALUE BULK ORDER (APPROVAL WORKFLOW)
+### =============================================
+
+### 6. Submit a bulk order with expensive items (triggers approval workflow)
+### PURPOSE: Demonstrates approval workflow integration with bulk processing
+### MONITORING: Watch for approval requirement notifications
+### EXPECTED: Items over $500 require approval via external events
+// @name bulkorder_expensive
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "bob",
+  "items": [
+    {"item": "kiwi", "quantity": 1, "price": 800.0},
+    {"item": "apple", "quantity": 2, "price": 600.0}
+  ]
+}
+
+### 7. Get expensive bulk order status (check for approval requirements)
+### PURPOSE: Verify which child workflows require approval
+### EXPECTED: High-value items show pending approval status
+@bulk_expensive_instance_id = {{bulkorder_expensive.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{bulk_expensive_instance_id}}
+
+### 8. Approve a specific high-value item in the bulk order
+### PURPOSE: Demonstrate external event handling for child workflows
+### NOTE: Replace with actual child workflow ID from bulk order response
+### FORMAT: bulk_{customer}_{suffix}_child_{index}_{item}
+### EXPECTED: Approved item proceeds with processing, others remain pending
+POST http://localhost:3007/bulk-orders/bulk_bob_3gu2ao/items/bulk_bob_3gu2ao_child_1_apple/approve
+Content-Type: application/json
+
+{
+  "approver": "manager",
+  "approved": true
+}
+
+### =============================================
+### PHASE 4: BULK ORDER VARIANTS FOR TESTING
+### =============================================
+
+### 9. Submit a mixed-value bulk order (some items need approval)
+### PURPOSE: Test combination of standard and high-value items
+### MONITORING: Observe differential processing paths
+// @name mixed_bulk_order
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "charlie",
+  "items": [
+    {"item": "apple", "quantity": 3, "price": 45.0},
+    {"item": "kiwi", "quantity": 1, "price": 750.0},
+    {"item": "orange", "quantity": 2, "price": 35.0}
+  ]
+}
+
+### 10. Submit a single-item bulk order (edge case testing)
+### PURPOSE: Test bulk processing with minimal complexity
+### EXPECTED: Still creates parent-child workflow pattern
+// @name single_item_bulk
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "diana",
+  "items": [
+    {"item": "pear", "quantity": 5, "price": 25.0}
+  ]
+}
+
+### 11. Get mixed bulk order status
+### PURPOSE: Monitor complex approval scenarios
+@mixed_bulk_instance_id = {{mixed_bulk_order.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{mixed_bulk_instance_id}}
+
+### 12. Get single-item bulk order status
+### PURPOSE: Verify edge case handling
+@single_bulk_instance_id = {{single_item_bulk.response.body.instance_id}}
+
+GET http://localhost:3007/bulk-orders/{{single_bulk_instance_id}}
+
+### =============================================
+### BULK ORDER WORKFLOW DEMONSTRATION POINTS
+### =============================================
+###
+### 🎯 KEY FEATURES TO HIGHLIGHT:
+###
+### 1. PARENT-CHILD WORKFLOW ORCHESTRATION:
+###    - Single bulk order creates multiple child workflows
+###    - Each item processed independently with parallel execution
+###    - Parent workflow coordinates and tracks all children
+###    - Clear activity names for workflow visualization
+###
+### 2. ADVANCED ACTIVITY NAMING:
+###    - announce_bulk_order_started: Clear workflow initiation
+###    - announce_child_workflow_spawned: Track child creation
+###    - announce_waiting_for_children: Parent coordination point
+###    - announce_item_success/failure: Individual outcomes
+###    - announce_inventory_reserved: Business logic completion
+###    - announce_payment_processing: Payment stage identification
+###    - announce_shipping_scheduled: Final fulfillment step
+###
+### 3. REAL-TIME MONITORING:
+###    - Live notifications with [BULK] prefix in UI
+###    - Parent and child workflow status tracking
+###    - Progress updates for each processing stage
+###    - Failure isolation between child workflows
+###
+### 4. APPROVAL WORKFLOW INTEGRATION:
+###    - Automatic approval detection for high-value items
+###    - External event handling for manager approvals
+###    - Individual item approval within bulk orders
+###    - Timeout handling for pending approvals
+###
+### 5. PARALLEL PROCESSING BENEFITS:
+###    - Multiple items processed simultaneously
+###    - Inventory reservation coordination
+###    - Payment processing optimization
+###    - Shipping schedule coordination
+###
+### 6. FAILURE HANDLING:
+###    - Graceful handling of partial bulk order failures
+###    - Individual item failure isolation
+###    - Compensation patterns for failed items
+###    - Parent workflow status aggregation
+###
+### 7. SCALABILITY DEMONSTRATION:
+###    - Bulk orders of varying sizes (1-10+ items)
+###    - Mixed-value scenarios with differential processing
+###    - Resource efficient child workflow spawning
+###    - Coordinated completion handling
+###
+### =============================================
+### 🚀 DEMO EXECUTION GUIDE:
+###
+### TIMING: Execute requests with 10-15 second delays for observation
+### MONITORING: Keep notifications UI (localhost:8080) open during demo
+### OBSERVATION: Watch for parent workflow coordination messages
+### ANALYSIS: Use workflow IDs to trace parent-child relationships
+### APPROVAL: Use actual child workflow IDs from bulk order responses
+###
+### EXPECTED DEMO DURATION: 5-10 minutes for complete demonstration
+### CONCURRENT PROCESSING: Child workflows execute in parallel
+### NOTIFICATION RATE: Expect 5-15 events per bulk order
+### =============================================
