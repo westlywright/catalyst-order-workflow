@@ -1,0 +1,354 @@
+### =============================================
+### ADVANCED WORKFLOW CHAOS SCENARIOS DEMO
+### =============================================
+### PURPOSE: Demonstrates advanced workflow-specific failure patterns
+### SCENARIOS: External Event Starvation, Child Workflow Zombies, Activity Limbo, Transaction Failures
+### FOCUS: Workflow debugging, manual intervention, recovery procedures
+### AUDIENCE: Perfect for demonstrating complex distributed system failures
+### DURATION: Allow 15-20 minutes for full comprehensive demonstration
+### =============================================
+
+### =============================================
+### PHASE 1: BASELINE ADVANCED FAILURE ASSESSMENT
+### =============================================
+
+### 1. Check advanced failure states (should be empty initially)
+### Expected: No active advanced failures
+GET http://localhost:3010/chaos/advanced-failures
+
+### 2. Check zombie workflow states
+### Expected: No zombie workflows detected
+GET http://localhost:3010/chaos/zombie-workflows
+
+### 3. Check missed external events
+### Expected: No missed events initially
+GET http://localhost:3010/chaos/missed-events
+
+### 4. Check hanging activities by service
+### Expected: No hanging activities
+GET http://localhost:3010/chaos/hanging-activities
+
+### =============================================
+### PHASE 2: EXTERNAL EVENT STARVATION SCENARIO
+### =============================================
+
+### 5. Create External Event Starvation Scenario
+### PURPOSE: Test workflows that wait for external events that never arrive
+### REAL-WORLD: Approval systems down, payment webhooks failing, API timeouts
+// @name external_event_starvation_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "External Event Starvation Test",
+  "description": "Simulate workflows waiting indefinitely for external events (approvals, webhooks, API responses)",
+  "failure_type": "external_event_starvation",
+  "target_service": "order-processor",
+  "failure_rate": 0.9,
+  "duration_seconds": 120,
+  "enabled": true
+}
+
+### 6. Execute External Event Starvation Scenario
+### EXPECTED: Creates multiple workflows waiting for events that never arrive
+### MONITORING: Watch for workflows stuck waiting for approval_system, payment_gateway, etc.
+@external_event_scenario_id = {{external_event_starvation_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{external_event_scenario_id}}/execute
+Content-Type: application/json
+
+### 7. Monitor missed events during starvation
+### PURPOSE: See which external events are not arriving
+GET http://localhost:3010/chaos/missed-events
+
+### 8. Create high-value order to trigger approval workflow during event starvation
+### PURPOSE: Create a real workflow that will be affected by event starvation
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "event_starvation_test_user",
+  "item": "diamond_ring",
+  "total": 2500.00
+}
+
+### =============================================
+### PHASE 3: CHILD WORKFLOW ZOMBIE SCENARIO
+### =============================================
+
+### 9. Create Child Workflow Zombie Scenario
+### PURPOSE: Test parent workflows with child workflows that enter zombie state
+### REAL-WORLD: Partial network partitions, process hangs, infinite loops in activities
+// @name child_workflow_zombie_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Child Workflow Zombie State",
+  "description": "Simulate child workflows that enter zombie state (running but never complete)",
+  "failure_type": "child_workflow_zombie",
+  "target_service": "batch-processor",
+  "failure_rate": 0.8,
+  "duration_seconds": 90,
+  "enabled": true
+}
+
+### 10. Execute Child Workflow Zombie Scenario
+### EXPECTED: Creates parent workflow with multiple zombie child workflows
+### MONITORING: Parent workflow stuck waiting for children that never complete
+@child_zombie_scenario_id = {{child_workflow_zombie_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{child_zombie_scenario_id}}/execute
+Content-Type: application/json
+
+### 11. Monitor zombie workflows
+### PURPOSE: See which child workflows are stuck in zombie state
+GET http://localhost:3010/chaos/zombie-workflows
+
+### 12. Create bulk order to trigger child workflows during zombie scenario
+### PURPOSE: Create real parent-child workflow that will be affected by zombie pattern
+POST http://localhost:3007/bulk-orders
+Content-Type: application/json
+
+{
+  "customer": "zombie_workflow_test",
+  "items": [
+    {"item": "laptop", "quantity": 1, "price": 1200.0},
+    {"item": "monitor", "quantity": 2, "price": 300.0},
+    {"item": "keyboard", "quantity": 1, "price": 100.0},
+    {"item": "mouse", "quantity": 1, "price": 50.0}
+  ]
+}
+
+### =============================================
+### PHASE 4: ACTIVITY EXECUTION LIMBO SCENARIO
+### =============================================
+
+### 13. Create Activity Execution Limbo Scenario
+### PURPOSE: Test activities that start but never complete or fail
+### REAL-WORLD: Long-running operations without timeouts, blocking on unavailable resources
+// @name activity_limbo_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Activity Execution Limbo",
+  "description": "Simulate activities that hang indefinitely, consuming resources without completion",
+  "failure_type": "activity_execution_limbo",
+  "target_service": "payments",
+  "failure_rate": 0.7,
+  "duration_seconds": 75,
+  "enabled": true
+}
+
+### 14. Execute Activity Execution Limbo Scenario
+### EXPECTED: Activities consume resources but never return results
+### MONITORING: Resource exhaustion, workflows suspended indefinitely
+@activity_limbo_scenario_id = {{activity_limbo_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{activity_limbo_scenario_id}}/execute
+Content-Type: application/json
+
+### 15. Monitor hanging activities
+### PURPOSE: See which activities are stuck in limbo state
+GET http://localhost:3010/chaos/hanging-activities
+
+### 16. Create orders to trigger payment activities during limbo scenario
+### PURPOSE: Create workflows that will call hanging payment activities
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "activity_limbo_test_user",
+  "item": "smartphone",
+  "total": 800.00
+}
+
+### =============================================
+### PHASE 5: DISTRIBUTED TRANSACTION FAILURE SCENARIO
+### =============================================
+
+### 17. Create Distributed Transaction Failure Scenario
+### PURPOSE: Test saga pattern failures during compensation (rollback)
+### REAL-WORLD: Network partitions during rollback, compensation activity failures
+// @name transaction_failure_scenario
+POST http://localhost:3010/chaos/scenarios
+Content-Type: application/json
+
+{
+  "name": "Distributed Transaction Compensation Failure",
+  "description": "Simulate failures during distributed transaction compensation/rollback operations",
+  "failure_type": "distributed_transaction_failure",
+  "target_service": "inventory",
+  "failure_rate": 0.6,
+  "duration_seconds": 60,
+  "enabled": true
+}
+
+### 18. Execute Distributed Transaction Failure Scenario
+### EXPECTED: Partial rollback state with data inconsistencies
+### MONITORING: Compensation failures, manual intervention required
+@transaction_failure_scenario_id = {{transaction_failure_scenario.response.body.id}}
+
+POST http://localhost:3010/chaos/scenarios/{{transaction_failure_scenario_id}}/execute
+Content-Type: application/json
+
+### 19. Create orders that will fail during shipping to trigger compensation
+### PURPOSE: Force orders through full transaction then fail during shipping
+POST http://localhost:3006/orders
+Content-Type: application/json
+
+{
+  "customer": "transaction_failure_test",
+  "item": "fragile_item",
+  "total": 450.00
+}
+
+### =============================================
+### PHASE 6: COMPREHENSIVE MONITORING & ANALYSIS
+### =============================================
+
+### 20. Get comprehensive advanced failure state overview
+### PURPOSE: See all active advanced failures across the system
+GET http://localhost:3010/chaos/advanced-failures
+
+### 21. Filter external event starvation failures specifically
+### PURPOSE: Focus on event starvation issues
+GET http://localhost:3010/chaos/advanced-failures?type=external_event_starvation
+
+### 22. Filter child workflow zombie failures specifically
+### PURPOSE: Focus on zombie workflow issues
+GET http://localhost:3010/chaos/advanced-failures?type=child_workflow_zombie
+
+### 23. Get all diagnostic events for advanced scenarios (last 50)
+### PURPOSE: Rich debugging data for dashboard consumption
+GET http://localhost:3010/chaos/events?limit=50
+
+### 24. Get critical events specifically (likely from advanced scenarios)
+### PURPOSE: High-priority events requiring immediate attention
+GET http://localhost:3010/chaos/events?severity=critical&limit=25
+
+### 25. Monitor missed events by specific event source
+### PURPOSE: Track which external systems are causing event starvation
+GET http://localhost:3010/chaos/missed-events?source=approval_system
+
+### =============================================
+### PHASE 7: RECOVERY SIMULATION & MANUAL INTERVENTION
+### =============================================
+
+### 26. Simulate recovery for external event starvation
+### PURPOSE: Demonstrate manual event injection and recovery procedures
+### NOTE: Replace {{external_event_scenario_id}} with actual correlation ID
+POST http://localhost:3010/chaos/advanced-failures/{{external_event_scenario_id}}/recover
+Content-Type: application/json
+
+### 27. Simulate recovery for child workflow zombies
+### PURPOSE: Demonstrate zombie child cleanup and parent workflow recovery
+### NOTE: Replace with actual parent workflow correlation ID from zombie scenario
+POST http://localhost:3010/chaos/advanced-failures/parent_workflow_{{child_zombie_scenario_id}}/recover
+Content-Type: application/json
+
+### 28. Simulate recovery for hanging activities
+### PURPOSE: Demonstrate activity timeout and resource cleanup
+### NOTE: Replace with actual correlation ID from limbo scenario
+POST http://localhost:3010/chaos/advanced-failures/{{activity_limbo_scenario_id}}/recover
+Content-Type: application/json
+
+### 29. Check recovery status - should show reduced failure counts
+### PURPOSE: Verify that recovery procedures were effective
+GET http://localhost:3010/chaos/advanced-failures
+
+### 30. Verify zombie cleanup was successful
+### PURPOSE: Confirm no zombie workflows remain after recovery
+GET http://localhost:3010/chaos/zombie-workflows
+
+### =============================================
+### PHASE 8: END-TO-END CORRELATION TRACKING
+### =============================================
+
+### 31. Get events correlated to external event starvation scenario
+### PURPOSE: Complete end-to-end tracing of event starvation workflow
+### NOTE: Replace {{external_event_scenario_id}} with actual correlation ID
+GET http://localhost:3010/chaos/events?correlation_id={{external_event_scenario_id}}&limit=100
+
+### 32. Get events correlated to zombie workflow scenario
+### PURPOSE: Complete end-to-end tracing of zombie workflow creation and resolution
+### NOTE: Replace {{child_zombie_scenario_id}} with actual correlation ID
+GET http://localhost:3010/chaos/events?correlation_id={{child_zombie_scenario_id}}&limit=100
+
+### 33. Final system status check
+### PURPOSE: Overall system health after advanced chaos testing
+GET http://localhost:3010/chaos/status
+
+### =============================================
+### ADVANCED WORKFLOW DEBUGGING DEMONSTRATION POINTS
+### =============================================
+###
+### 🎯 KEY ADVANCED FEATURES FOR DASHBOARDS:
+###
+### 1. WORKFLOW STATE VISUALIZATION:
+###    - Show workflows stuck in specific states (waiting, zombie, limbo)
+###    - Display parent-child workflow dependency graphs
+###    - Highlight workflows requiring manual intervention
+###
+### 2. EXTERNAL EVENT TRACKING:
+###    - Monitor expected vs actual external events
+###    - Track event source reliability and timeouts
+###    - Show workflow approval bottlenecks and delays
+###
+### 3. ZOMBIE WORKFLOW DETECTION:
+###    - Identify child workflows that never complete
+###    - Track resource consumption by zombie processes
+###    - Display parent workflows waiting indefinitely
+###
+### 4. ACTIVITY EXECUTION MONITORING:
+###    - Show activities consuming resources without completion
+###    - Track hanging activities by service and type
+###    - Monitor resource exhaustion patterns
+###
+### 5. DISTRIBUTED TRANSACTION ANALYSIS:
+###    - Visualize saga compensation failure patterns
+###    - Track partial rollback states and data inconsistencies
+###    - Show manual intervention requirements
+###
+### 6. RECOVERY PROCEDURE TRACKING:
+###    - Document manual intervention actions taken
+###    - Track recovery success rates and procedures
+###    - Show workflow restart and cleanup operations
+###
+### 7. CORRELATION AND TRACING:
+###    - End-to-end workflow failure correlation
+###    - Cross-service failure impact analysis
+###    - Timeline visualization of failure progression
+###
+### 8. REAL-TIME ALERTING:
+###    - Critical events requiring immediate attention
+###    - SLA violation alerts for hanging workflows
+###    - Resource exhaustion warnings
+###
+### =============================================
+### 🚀 ADVANCED SCENARIO DEMONSTRATION GUIDE:
+###
+### TIMING: Execute phases sequentially with 2-3 minute observation periods
+### MONITORING: Keep notifications UI (localhost:8080) open for live updates
+### ANALYSIS: Use correlation IDs for complete workflow tracing
+### RECOVERY: Demonstrate manual intervention capabilities
+### CLEANUP: Recovery endpoints simulate real-world intervention procedures
+###
+### EXPECTED DEMO DURATION: 15-20 minutes for complete advanced scenarios
+### ADVANCED FAILURE TYPES: 4 distinct workflow-specific failure patterns
+### NOTIFICATION RATE: Expect 15-30 critical/error events per scenario
+### RECOVERY PROCEDURES: 3-5 manual intervention actions per scenario type
+### =============================================
+
+### =============================================
+### 🎭 REAL-WORLD SCENARIO MAPPING:
+###
+### 1. EXTERNAL EVENT STARVATION → HR approval workflows, payment webhooks, API integrations
+### 2. CHILD WORKFLOW ZOMBIE → Batch processing, multi-tenant operations, fan-out patterns
+### 3. ACTIVITY EXECUTION LIMBO → External API calls, database operations, file processing
+### 4. DISTRIBUTED TRANSACTION FAILURE → E-commerce checkouts, financial transactions, inventory management
+###
+### These scenarios represent the most challenging distributed system failures
+### that require manual intervention and sophisticated monitoring to resolve.
+### =============================================

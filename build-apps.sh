@@ -6,6 +6,7 @@ pip3 install -r requirements.txt
 
 cd ../notifications
 npm install
+npm run build
 
 cd ../order-processor
 pip3 install -r requirements.txt

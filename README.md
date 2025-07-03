@@ -391,6 +391,213 @@ This comprehensive chaos engineering setup provides the perfect foundation for d
 - **System Health**: Service dependencies and cascade failure visualization
 - **Recovery Tracking**: End-to-end failure and recovery lifecycle monitoring
 
+### Advanced Workflow Chaos Scenarios 🎭
+
+The chaos engineering service now includes **four advanced workflow-specific failure patterns** that simulate the most challenging distributed system failures requiring manual intervention:
+
+#### 1. External Event Starvation 📡
+**Real-World Scenario**: Approval systems down, payment webhooks failing, external API timeouts
+- **Purpose**: Test workflows that wait indefinitely for external events that never arrive
+- **Simulates**: Approval workflow timeouts, webhook delivery failures, third-party API unavailability
+- **Monitoring**: Track missed events by source, workflow approval bottlenecks, SLA violations
+- **Recovery**: Manual event injection, timeout extension, fallback processing
+
+```json
+{
+  "failure_type": "external_event_starvation",
+  "target_service": "order-processor",
+  "real_world_examples": [
+    "HR approval workflows stuck waiting for manager responses",
+    "Payment workflows missing webhook confirmations",
+    "Integration workflows with unresponsive external APIs"
+  ]
+}
+```
+
+#### 2. Child Workflow Zombie State 🧟‍♂️
+**Real-World Scenario**: Batch processing failures, multi-tenant operations, fan-out pattern issues
+- **Purpose**: Test parent workflows with child workflows that enter zombie state (running but never complete)
+- **Simulates**: Network partitions affecting child processes, infinite loops in activities, memory leaks causing freezes
+- **Monitoring**: Parent workflows stuck indefinitely, resource consumption by zombie processes, dependency graphs
+- **Recovery**: Terminate zombie children, restart parent workflows, manual cleanup and compensation
+
+```json
+{
+  "failure_type": "child_workflow_zombie",
+  "target_service": "batch-processor",
+  "real_world_examples": [
+    "Bulk order processing with stuck item workflows",
+    "Multi-tenant data processing with hanging tenant operations",
+    "Fan-out message processing with unresponsive workers"
+  ]
+}
+```
+
+#### 3. Activity Execution Limbo ⏳
+**Real-World Scenario**: Long-running operations without timeouts, blocking on unavailable resources
+- **Purpose**: Test activities that start execution but never complete or fail
+- **Simulates**: External API calls without timeouts, database operations blocking on locks, file processing hanging
+- **Monitoring**: Resource exhaustion patterns, workflows suspended indefinitely, hanging activities by service
+- **Recovery**: Kill hanging processes, restart service instances, implement activity timeouts, circuit breaker protection
+
+```json
+{
+  "failure_type": "activity_execution_limbo",
+  "target_service": "payments",
+  "real_world_examples": [
+    "Payment processing calls hanging on external gateways",
+    "Database operations blocked on unavailable connections",
+    "File processing activities consuming CPU without progress"
+  ]
+}
+```
+
+#### 4. Distributed Transaction Failure 💥
+**Real-World Scenario**: E-commerce checkouts, financial transactions, saga pattern compensation failures
+- **Purpose**: Test distributed transaction failures during compensation/rollback operations
+- **Simulates**: Network partitions during rollback, compensation activity failures, saga pattern breakdown
+- **Monitoring**: Partial rollback states, data inconsistencies, compensation failure patterns
+- **Recovery**: Manual compensation retry, data reconciliation, rollback to known good state, idempotent compensation
+
+```json
+{
+  "failure_type": "distributed_transaction_failure",
+  "target_service": "inventory",
+  "real_world_examples": [
+    "E-commerce order failures during shipping with payment rollback issues",
+    "Financial transaction compensation failures in multi-service operations",
+    "Inventory reservation rollbacks failing during order cancellations"
+  ]
+}
+```
+
+### Advanced Chaos Monitoring APIs 📊
+
+The advanced chaos scenarios provide comprehensive monitoring endpoints for dashboard integration:
+
+**Advanced Failure State Tracking**:
+```http
+GET /chaos/advanced-failures                    # All advanced failure states
+GET /chaos/advanced-failures?type=external_event_starvation  # Filter by type
+```
+
+**Zombie Workflow Detection**:
+```http
+GET /chaos/zombie-workflows                     # Active zombie workflows
+GET /chaos/zombie-workflows                     # Resource consumption tracking
+```
+
+**External Event Monitoring**:
+```http
+GET /chaos/missed-events                        # All missed external events
+GET /chaos/missed-events?source=approval_system # Filter by event source
+```
+
+**Activity Execution Tracking**:
+```http
+GET /chaos/hanging-activities                   # Hanging activities by service
+```
+
+**Recovery Simulation**:
+```http
+POST /chaos/advanced-failures/{workflow_id}/recover  # Simulate manual intervention
+```
+
+### Comprehensive Demo Scripts 🎬
+
+**Two complete demonstration scripts** are provided for different audiences:
+
+1. **`chaos-demo.http`** - Basic chaos patterns (10-15 minutes)
+   - Service timeouts, network errors, circuit breakers
+   - Perfect for demonstrating resilience patterns and retry logic
+
+2. **`advanced-chaos-demo.http`** - Advanced workflow failures (15-20 minutes)
+   - External event starvation, zombie workflows, activity limbo, transaction failures
+   - Ideal for demonstrating complex distributed system debugging and manual intervention
+
+**Key Demo Features**:
+- 📋 **33 test scenarios** across both scripts
+- 🎯 **8 phases** of comprehensive failure simulation
+- 📊 **10+ monitoring endpoints** for real-time analysis
+- 🔧 **Recovery procedures** demonstrating manual intervention
+- 📈 **Rich diagnostic events** perfect for dashboard consumption
+- 🔗 **End-to-end correlation** for complete workflow tracing
+
+### Automated Demo Scripts 🎬
+
+**Three comprehensive bash scripts** are provided for automated demonstration:
+
+1. **`run-chaos-demo.sh`** - Basic chaos engineering (8-12 minutes)
+   - Automated execution of basic failure scenarios
+   - Circuit breaker testing and service resilience validation
+
+2. **`run-advanced-chaos-demo.sh`** - Multi-service failure patterns (8-12 minutes)
+   - Concurrent failure scenarios with comprehensive monitoring
+   - Advanced circuit breaker and cascade failure testing
+
+3. **`run-advanced-workflow-chaos-demo.sh`** - Advanced workflow failures (15-20 minutes)
+   - **NEW**: Automated execution of the four advanced workflow-specific scenarios
+   - External event starvation, zombie workflows, activity limbo, transaction failures
+   - Manual intervention simulation and recovery procedures
+   - Comprehensive correlation tracking and advanced diagnostics
+
+**Advanced Workflow Demo Features**:
+- 🎭 **9 phases** of advanced workflow failure simulation
+- 📡 **External Event Starvation**: Simulates workflows waiting for events that never arrive
+- 🧟‍♂️ **Child Workflow Zombies**: Creates zombie child workflows that never complete
+- ⏳ **Activity Execution Limbo**: Hangs activities indefinitely consuming resources
+- 💥 **Distributed Transaction Failure**: Compensation failures with data inconsistencies
+- 🔧 **Recovery Simulation**: Automated manual intervention procedures
+- 📊 **Advanced Monitoring**: Real-time tracking of complex failure states
+- 🔗 **End-to-End Correlation**: Complete workflow tracing for debugging
+
+**Script Usage**:
+```bash
+# Make scripts executable
+chmod +x run-*-demo.sh
+
+# Run basic chaos engineering
+./run-chaos-demo.sh
+
+# Run advanced multi-service failures
+./run-advanced-chaos-demo.sh
+
+# Run advanced workflow-specific failures (NEW)
+./run-advanced-workflow-chaos-demo.sh
+```
+
+**Demo Duration**: 8-20 minutes depending on script complexity
+**Concurrent Scenarios**: Up to 4 scenarios running simultaneously
+**Event Volume**: 20-50 diagnostic events per minute during active chaos
+**Recovery Procedures**: 3-5 manual intervention actions per advanced scenario
+
+### Dashboard Integration Features 🖥️
+
+The advanced chaos scenarios are specifically designed for **dashboard debugging demonstrations**:
+
+**Workflow State Visualization**:
+- Show workflows stuck in specific states (waiting, zombie, limbo)
+- Display parent-child workflow dependency graphs
+- Highlight workflows requiring manual intervention
+
+**Real-Time Event Correlation**:
+- End-to-end workflow failure correlation with unique correlation IDs
+- Cross-service failure impact analysis and dependency mapping
+- Timeline visualization of failure progression and recovery
+
+**Advanced Alerting Patterns**:
+- Critical events requiring immediate attention (CRITICAL severity)
+- SLA violation alerts for hanging workflows (ERROR severity)
+- Resource exhaustion warnings (WARNING severity)
+- Detailed debugging information (INFO severity)
+
+**Recovery Procedure Documentation**:
+- Manual intervention actions taken and their effectiveness
+- Recovery success rates and time-to-resolution metrics
+- Workflow restart and cleanup operation tracking
+
+These advanced scenarios represent the most challenging distributed system failures that require sophisticated monitoring, manual intervention, and comprehensive recovery procedures to resolve successfully.
+
 ### Circuit Breaker Testing Workflow
 
 The `test-commands.http` file includes an enhanced circuit breaker testing section that demonstrates:
