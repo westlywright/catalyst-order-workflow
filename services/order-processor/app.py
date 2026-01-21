@@ -20,7 +20,7 @@ APPROVAL_THRESHOLD = 1000.0
 APPROVAL_TIMEOUT = timedelta(hours=24)
 
 # Chaos engineering configuration
-ENABLE_CHAOS_DETECTION = os.getenv("ENABLE_CHAOS_DETECTION", "true").lower() == "true"
+ENABLE_CHAOS_DETECTION = os.getenv("ENABLE_CHAOS_DETECTION", "false").lower() == "true"
 CHAOS_ENGINEER_URL = os.getenv("CHAOS_ENGINEER_URL", "http://localhost:3010")
 
 app = Flask(__name__)

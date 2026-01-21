@@ -6,7 +6,7 @@
 HOST="localhost"
 PORT="3006"
 ENDPOINT="/orders"
-RATE=2  # requests per second
+RATE=0.5  # requests per second (1 request every 2 seconds)
 DURATION=0  # run forever by default
 VERBOSE=true
 

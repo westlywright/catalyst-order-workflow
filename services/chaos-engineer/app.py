@@ -22,7 +22,7 @@ app = Flask(__name__)
 
 # Failure simulation configuration
 FAILURE_RATE = float(os.getenv("FAILURE_RATE", "0.3"))  # 30% default failure rate
-ENABLE_CHAOS = os.getenv("ENABLE_CHAOS", "true").lower() == "true"
+ENABLE_CHAOS = os.getenv("ENABLE_CHAOS", "false").lower() == "true"
 
 class FailureType(Enum):
     TIMEOUT = "timeout"

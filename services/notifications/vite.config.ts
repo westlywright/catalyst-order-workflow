@@ -9,18 +9,14 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/socket.io': {
-        target: 'ws://localhost:8080',
+      "/api": "http://localhost:8085",
+      "/socket.io": {
+        target: "ws://localhost:8085",
         ws: true,
       },
     },
   },
-  plugins: [
-    react(),
-    mode === 'development' &&
-    componentTagger(),
-  ].filter(Boolean),
+  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

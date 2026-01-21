@@ -9,17 +9,37 @@ apps:
     appPort: 3002
     appDirPath: ./services/inventory
     command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: order-processor
     appDirPath: ./services/order-processor
     command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: payments
     appPort: 3003
     appDirPath: ./services/payments
     command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: notifications
     appPort: 8080
     appDirPath: ./services/notifications
     command: ["npm", "run", "dev"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: shipping
     appPort: 3004
     appDirPath: ./services/shipping
@@ -28,10 +48,20 @@ apps:
     appPort: 3007
     appDirPath: ./services/batch-processor
     command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: returns
     appPort: 3008
     appDirPath: ./services/returns
     command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
   - appID: chaos-engineer
     appPort: 3010
     appDirPath: ./services/chaos-engineer

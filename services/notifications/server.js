@@ -1,9 +1,9 @@
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 
 const TOPIC_NAME = process.env.TOPIC_NAME || "notifications";
 
@@ -19,70 +19,72 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
   },
   // Enable Socket.IO debugging
-  debug: true
+  debug: true,
 });
 
 // Check if dist directory exists (production mode)
-const isDist = fs.existsSync(path.join(__dirname, 'dist'));
+const isDist = fs.existsSync(path.join(__dirname, "dist"));
 
 // In production, serve static files from 'dist'
 if (isDist) {
-  console.log('Running in production mode, serving from dist directory');
-  app.use(express.static(path.join(__dirname, 'dist')));
+  console.log("Running in production mode, serving from dist directory");
+  app.use(express.static(path.join(__dirname, "dist")));
 }
 
 // Parse JSON request body with more logging
-app.use(express.json({ 
-  limit: '10mb',
-  type: ['application/json', 'application/cloudevents+json'] 
-}));
+app.use(
+  express.json({
+    limit: "10mb",
+    type: ["application/json", "application/cloudevents+json"],
+  })
+);
 
 // Socket.IO connection handler with more logging
-io.on('connection', (socket) => {
+io.on("connection", (socket) => {
   const clientId = socket.id;
   console.log(`[${new Date().toISOString()}] Client connected:`, clientId);
-  
+
   // Send a test message to confirm connection
   setTimeout(() => {
     console.log(`[${new Date().toISOString()}] Sending test message to client:`, clientId);
-    socket.emit('message', { 
+    socket.emit("message", {
       message: JSON.stringify({
-        order_id: "test_connection", 
-        message: "Connection test successful"
-      })
+        order_id: "test_connection",
+        message: "Connection test successful",
+      }),
     });
   }, 1000);
-  
-  socket.on('disconnect', () => {
+
+  socket.on("disconnect", () => {
     console.log(`[${new Date().toISOString()}] Client disconnected:`, clientId);
   });
 });
 
 // Topic notification handler
-app.post('/' + TOPIC_NAME, (req, res) => {
+app.post("/" + TOPIC_NAME, (req, res) => {
   try {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] Received event:`, JSON.stringify(req.body));
-    
+
     // Extract the message data
     const event = req.body;
-    const message = event.data || '';
-    
+    const message = event.data || "";
+
     console.log(`[${timestamp}] Processing message:`, message);
-    
+
     // Emit the message to all connected clients
-    io.emit('message', { message });
+    io.emit("message", { message });
     console.log(`[${timestamp}] Emitted message to all clients`);
-    
+
     return res.status(200).send();
   } catch (error) {
-    console.error('Error processing message:', error);
+    console.error("Error processing message:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to process message'
+      error: "Failed to process message",
     });
   }
 });
@@ -95,13 +97,13 @@ app.get("/healthz", (req, res) => {
 
 // In production, handle all routes
 if (isDist) {
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
   });
 }
 
 // Start the server
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8085;
 server.listen(PORT, () => {
   console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
   console.log(`- API endpoint: http://localhost:${PORT}/${TOPIC_NAME}`);
