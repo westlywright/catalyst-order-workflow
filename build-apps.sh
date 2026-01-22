@@ -25,3 +25,6 @@ pip3 install -r requirements.txt
 
 cd ../chaos-engineer
 pip3 install -r requirements.txt
+
+cd ../saga-demo
+pip3 install -r requirements.txt

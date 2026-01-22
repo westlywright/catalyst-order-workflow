@@ -1,0 +1,322 @@
+### =============================================
+### SAGA DEMO - Advanced Workflow Patterns
+### =============================================
+### PURPOSE: Demonstrates saga pattern with compensation, continue-as-new,
+###          and multi-level parent-child-grandchild workflows
+### AUDIENCE: Perfect for showcasing advanced Dapr workflow capabilities
+### KEY FEATURE: Input-driven failure control for repeatable demos
+### DURATION: Allow 10-15 minutes for full demonstration
+### =============================================
+
+### =============================================
+### PHASE 1: SYSTEM PREPARATION
+### =============================================
+
+### 1. Health check for saga-demo service
+GET http://localhost:3009/healthz
+
+### 2. Restock inventory before demo
+POST http://localhost:3002/api/v1/inventory/restock
+
+### 3. Check inventory levels
+GET http://localhost:3002/api/v1/inventory
+
+### =============================================
+### PHASE 2: SAGA PATTERN - Successful Order
+### =============================================
+
+### 4. Submit a successful saga order
+### PURPOSE: Demonstrates complete saga flow without failures
+### EXPECTED: reserve -> charge -> ship (all succeed)
+### MONITORING: Watch for [SAGA] prefixed messages in notifications UI
+// @name saga_success
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "Alice",
+    "item": "laptop",
+    "total": 999.99,
+    "destination": "123 Main Street, Suite 100"
+}
+
+### 5. Check saga order status
+@saga_success_id = {{saga_success.response.body.instance_id}}
+
+GET http://localhost:3009/saga/orders/{{saga_success_id}}
+
+### =============================================
+### PHASE 3: SAGA PATTERN - Failure at RESERVE Step
+### =============================================
+
+### 6. Submit order that fails at RESERVE step
+### PURPOSE: Demonstrates early failure (no compensations needed)
+### EXPECTED: reserve fails -> no steps to compensate
+// @name saga_fail_reserve
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "Bob",
+    "item": "phone",
+    "total": 599.99,
+    "destination": "456 Oak Avenue",
+    "fail_at_step": "reserve",
+    "fail_type": "error",
+    "simulate_delay_ms": 500
+}
+
+### 7. Check failed saga status
+@saga_fail_reserve_id = {{saga_fail_reserve.response.body.instance_id}}
+
+GET http://localhost:3009/saga/orders/{{saga_fail_reserve_id}}
+
+### =============================================
+### PHASE 4: SAGA PATTERN - Failure at CHARGE Step
+### =============================================
+
+### 8. Submit order that fails at CHARGE step
+### PURPOSE: Demonstrates compensation for inventory reservation
+### EXPECTED: reserve succeeds -> charge fails -> release_inventory compensation
+// @name saga_fail_charge
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "Carol",
+    "item": "tablet",
+    "total": 399.99,
+    "destination": "789 Pine Road",
+    "fail_at_step": "charge",
+    "fail_type": "unavailable",
+    "simulate_delay_ms": 1000
+}
+
+### 9. Check compensation execution
+@saga_fail_charge_id = {{saga_fail_charge.response.body.instance_id}}
+
+GET http://localhost:3009/saga/orders/{{saga_fail_charge_id}}
+
+### =============================================
+### PHASE 5: SAGA PATTERN - Failure at SHIP Step
+### =============================================
+
+### 10. Submit order that fails at SHIP step (full compensation)
+### PURPOSE: Demonstrates full compensation chain
+### EXPECTED: reserve -> charge -> ship fails -> refund_payment -> release_inventory
+// @name saga_fail_ship
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "David",
+    "item": "monitor",
+    "total": 299.99,
+    "destination": "321 Elm Boulevard",
+    "fail_at_step": "ship",
+    "fail_type": "timeout",
+    "simulate_delay_ms": 500
+}
+
+### 11. Check full compensation chain
+@saga_fail_ship_id = {{saga_fail_ship.response.body.instance_id}}
+
+GET http://localhost:3009/saga/orders/{{saga_fail_ship_id}}
+
+### =============================================
+### PHASE 6: SAGA PATTERN - Force Success
+### =============================================
+
+### 12. Submit order with force_success flag
+### PURPOSE: Demonstrates bypassing configured failures
+### EXPECTED: All steps succeed despite any failure config
+// @name saga_force_success
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "Eve",
+    "item": "keyboard",
+    "total": 149.99,
+    "destination": "555 Tech Lane",
+    "fail_at_step": "charge",
+    "fail_type": "error",
+    "force_success": true
+}
+
+### 13. Verify forced success
+@saga_force_success_id = {{saga_force_success.response.body.instance_id}}
+
+GET http://localhost:3009/saga/orders/{{saga_force_success_id}}
+
+### =============================================
+### PHASE 7: CONTINUE-AS-NEW PATTERN
+### =============================================
+
+### 14. Start order monitoring workflow
+### PURPOSE: Demonstrates continue-as-new for history management
+### EXPECTED: Monitor runs multiple iterations, resetting history each time
+// @name monitor_start
+POST http://localhost:3009/monitor/start
+Content-Type: application/json
+
+{
+    "order_id": "saga_alice_xxxxx",
+    "check_interval_seconds": 3,
+    "max_checks": 5
+}
+
+### 15. Check monitor status
+@monitor_id = {{monitor_start.response.body.monitor_id}}
+
+GET http://localhost:3009/monitor/{{monitor_id}}
+
+### =============================================
+### PHASE 8: MULTI-LEVEL WORKFLOWS (Parent -> Child -> Grandchild)
+### =============================================
+
+### 16. Submit fulfillment order with workflow hierarchy
+### PURPOSE: Demonstrates multi-level parent-child-grandchild workflows
+### HIERARCHY:
+###   - fulfill_xxx (Parent: Fulfillment)
+###     - fulfill_xxx_validation (Child: Validation)
+###       - fulfill_xxx_address_check (Grandchild: parallel)
+###       - fulfill_xxx_payment_check (Grandchild: parallel)
+// @name fulfillment_order
+POST http://localhost:3009/fulfillment/orders
+Content-Type: application/json
+
+{
+    "customer": "Frank",
+    "item": "headphones",
+    "total": 199.99,
+    "destination": "888 Audio Drive, Building C"
+}
+
+### 17. Check fulfillment status (shows workflow hierarchy)
+@fulfillment_id = {{fulfillment_order.response.body.instance_id}}
+
+GET http://localhost:3009/fulfillment/orders/{{fulfillment_id}}
+
+### 18. Submit another fulfillment to see parallel grandchild execution
+// @name fulfillment_order_2
+POST http://localhost:3009/fulfillment/orders
+Content-Type: application/json
+
+{
+    "customer": "Grace",
+    "item": "webcam",
+    "total": 89.99,
+    "destination": "999 Video Street"
+}
+
+### 19. Check second fulfillment
+@fulfillment_2_id = {{fulfillment_order_2.response.body.instance_id}}
+
+GET http://localhost:3009/fulfillment/orders/{{fulfillment_2_id}}
+
+### =============================================
+### PHASE 9: RERUN DEMOS - Same Input, Different Outcomes
+### =============================================
+
+### 20. First run: Success
+// @name rerun_demo_success
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "RerunTest",
+    "item": "speaker",
+    "total": 249.99,
+    "destination": "111 Demo Lane"
+}
+
+### 21. Second run: Same customer, fail at charge
+// @name rerun_demo_fail
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "RerunTest",
+    "item": "speaker",
+    "total": 249.99,
+    "destination": "111 Demo Lane",
+    "fail_at_step": "charge",
+    "fail_type": "error"
+}
+
+### 22. Third run: Force success to recover
+// @name rerun_demo_recover
+POST http://localhost:3009/saga/orders
+Content-Type: application/json
+
+{
+    "customer": "RerunTest",
+    "item": "speaker",
+    "total": 249.99,
+    "destination": "111 Demo Lane",
+    "force_success": true
+}
+
+### =============================================
+### DEMONSTRATION POINTS
+### =============================================
+###
+### KEY FEATURES TO HIGHLIGHT:
+###
+### 1. SAGA PATTERN WITH COMPENSATION:
+###    - Each step has explicit compensating action
+###    - Compensations execute in reverse order on failure
+###    - Clear visibility of rollback in notifications
+###
+### 2. INPUT-DRIVEN FAILURE CONTROL:
+###    - fail_at_step: "reserve", "charge", "ship"
+###    - fail_type: "timeout", "error", "unavailable"
+###    - simulate_delay_ms: slow execution for visualization
+###    - force_success: bypass failures for recovery demos
+###
+### 3. CONTINUE-AS-NEW PATTERN:
+###    - Monitor workflow resets history each iteration
+###    - Prevents unbounded history growth
+###    - Shows long-running workflow management
+###
+### 4. MULTI-LEVEL WORKFLOW HIERARCHY:
+###    - Parent: Fulfillment workflow
+###    - Child: Validation workflow
+###    - Grandchildren: Address + Payment checks (parallel)
+###    - Uses when_all for parallel grandchild execution
+###
+### 5. RERUNNABLE WORKFLOWS:
+###    - Same customer/item, different failure configs
+###    - Perfect for Catalyst UI demonstrations
+###    - Shows deterministic vs. dynamic behavior
+###
+### =============================================
+### DEMO EXECUTION GUIDE:
+###
+### PREPARATION:
+###   1. Run health check and restock inventory
+###   2. Open notifications UI at localhost:8080
+###   3. Open Catalyst UI for workflow visualization
+###
+### SAGA DEMO FLOW:
+###   1. Start with successful order (Phase 2)
+###   2. Show failure at each step progressively (Phases 3-5)
+###   3. Demonstrate force_success recovery (Phase 6)
+###
+### CONTINUE-AS-NEW DEMO:
+###   1. Start monitor and wait for iterations
+###   2. Show history resets in Catalyst UI
+###
+### MULTI-LEVEL DEMO:
+###   1. Submit fulfillment order
+###   2. Show hierarchy in Catalyst UI
+###   3. Watch parallel grandchild execution
+###
+### RERUN DEMO:
+###   1. Run same order 3 times with different configs
+###   2. Compare outcomes in Catalyst UI
+###
+### EXPECTED DURATION: 10-15 minutes
+### NOTIFICATION RATE: 5-15 events per workflow
+### =============================================

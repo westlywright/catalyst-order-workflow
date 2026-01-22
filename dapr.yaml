@@ -66,3 +66,12 @@ apps:
     appPort: 3010
     appDirPath: ./services/chaos-engineer
     command: ["python3", "app.py"]
+  - appID: saga-demo
+    appPort: 3009
+    appDirPath: ./services/saga-demo
+    command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3

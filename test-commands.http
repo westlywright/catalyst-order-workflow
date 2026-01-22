@@ -42,6 +42,8 @@ Content-Type: application/json
 ### - bulk-demo.http: Parent-child workflows and bulk order processing
 ### - return-demo.http: Workflow chaining and return processing
 ### - chaos-demo.http: Failure simulation and debugging capabilities
+### - saga-demo.http: Saga pattern with compensation, continue-as-new,
+###                   and multi-level parent-child-grandchild workflows
 ### =====================================
 
 
