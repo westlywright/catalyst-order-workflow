@@ -169,6 +169,19 @@ class PaymentCheckResult:
 
 
 # =============================================================================
+# EXCEPTIONS
+# =============================================================================
+
+class FatalWorkflowError(Exception):
+    """
+    Exception for fatal workflow failures that should NOT trigger compensations.
+    When raised, the workflow is marked as FAILED and can be rerun.
+    Use fail_type="fatal" to trigger this behavior.
+    """
+    pass
+
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -225,6 +238,8 @@ def saga_order_workflow(ctx: wf.DaprWorkflowContext, order_input):
         yield ctx.call_activity(notify_saga, input=f"[SAGA] Step 1: Reserving inventory for {order.item}")
 
         if should_fail_at_step(order, "reserve"):
+            if order.fail_type == "fatal":
+                raise FatalWorkflowError(f"Fatal failure at reserve step - workflow terminated")
             raise Exception(f"Simulated {order.fail_type} failure at reserve step")
 
         reserve_result = yield ctx.call_activity(saga_reserve_inventory, input=order)
@@ -240,6 +255,8 @@ def saga_order_workflow(ctx: wf.DaprWorkflowContext, order_input):
         yield ctx.call_activity(notify_saga, input=f"[SAGA] Step 2: Charging payment ${order.total}")
 
         if should_fail_at_step(order, "charge"):
+            if order.fail_type == "fatal":
+                raise FatalWorkflowError(f"Fatal failure at charge step - workflow terminated")
             raise Exception(f"Simulated {order.fail_type} failure at charge step")
 
         payment_result = yield ctx.call_activity(saga_charge_payment, input=order)
@@ -255,6 +272,8 @@ def saga_order_workflow(ctx: wf.DaprWorkflowContext, order_input):
         yield ctx.call_activity(notify_saga, input=f"[SAGA] Step 3: Creating shipment to {order.destination}")
 
         if should_fail_at_step(order, "ship"):
+            if order.fail_type == "fatal":
+                raise FatalWorkflowError(f"Fatal failure at ship step - workflow terminated")
             raise Exception(f"Simulated {order.fail_type} failure at ship step")
 
         ship_result = yield ctx.call_activity(saga_create_shipment, input=order)
@@ -277,6 +296,12 @@ def saga_order_workflow(ctx: wf.DaprWorkflowContext, order_input):
         )
 
     except Exception as e:
+        # Fatal failures bypass compensations and fail the workflow immediately
+        if isinstance(e, FatalWorkflowError):
+            yield ctx.call_activity(notify_saga,
+                                   input=f"[SAGA] FATAL: {str(e)} - No compensation, workflow marked as FAILED")
+            raise
+
         # FAILURE - Execute compensations in reverse order
         error_msg = str(e)
         yield ctx.call_activity(notify_saga, input=f"[SAGA] FAILURE: {error_msg}. Starting compensations...")

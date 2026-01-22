@@ -127,9 +127,13 @@ Control workflow behavior through request parameters:
 | Parameter | Type | Values | Description |
 |-----------|------|--------|-------------|
 | `fail_at_step` | string | `"reserve"`, `"charge"`, `"ship"` | Step to fail at |
-| `fail_type` | string | `"timeout"`, `"error"`, `"unavailable"` | Type of failure |
+| `fail_type` | string | `"timeout"`, `"error"`, `"unavailable"`, `"fatal"` | Type of failure |
 | `simulate_delay_ms` | int | 0-5000 | Delay for visualization |
 | `force_success` | bool | true/false | Bypass configured failures |
+
+**Failure Types:**
+- `"timeout"`, `"error"`, `"unavailable"` - Trigger saga compensation pattern (rollback)
+- `"fatal"` - Workflow marked as FAILED immediately, no compensations, allows rerun
 
 **Example Combinations:**
 
@@ -150,6 +154,12 @@ Control workflow behavior through request parameters:
   "fail_at_step": "ship",
   "fail_type": "timeout",
   "force_success": true
+}
+
+// Fatal failure - workflow FAILED, no compensations, can be rerun
+{
+  "fail_at_step": "charge",
+  "fail_type": "fatal"
 }
 ```
 
@@ -501,17 +511,19 @@ The saga-demo service integrates with existing services via Dapr service invocat
 
   ---
   Parameters
-  ┌───────────────────┬────────┬───────────────────────────────────┬─────────────────────────────┐
-  │     Parameter     │  Type  │              Values               │         Description         │
-  ├───────────────────┼────────┼───────────────────────────────────┼─────────────────────────────┤
-  │ fail_at_step      │ string │ "reserve", "charge", "ship"       │ Which step should fail      │
-  ├───────────────────┼────────┼───────────────────────────────────┼─────────────────────────────┤
-  │ fail_type         │ string │ "timeout", "error", "unavailable" │ What kind of failure        │
-  ├───────────────────┼────────┼───────────────────────────────────┼─────────────────────────────┤
-  │ simulate_delay_ms │ int    │ 0-5000                            │ Add delay for visualization │
-  ├───────────────────┼────────┼───────────────────────────────────┼─────────────────────────────┤
-  │ force_success     │ bool   │ true/false                        │ Bypass configured failures  │
-  └───────────────────┴────────┴───────────────────────────────────┴─────────────────────────────┘
+  ┌───────────────────┬────────┬─────────────────────────────────────────────┬─────────────────────────────┐
+  │     Parameter     │  Type  │                   Values                    │         Description         │
+  ├───────────────────┼────────┼─────────────────────────────────────────────┼─────────────────────────────┤
+  │ fail_at_step      │ string │ "reserve", "charge", "ship"                 │ Which step should fail      │
+  ├───────────────────┼────────┼─────────────────────────────────────────────┼─────────────────────────────┤
+  │ fail_type         │ string │ "timeout", "error", "unavailable", "fatal"  │ What kind of failure        │
+  ├───────────────────┼────────┼─────────────────────────────────────────────┼─────────────────────────────┤
+  │ simulate_delay_ms │ int    │ 0-5000                                      │ Add delay for visualization │
+  ├───────────────────┼────────┼─────────────────────────────────────────────┼─────────────────────────────┤
+  │ force_success     │ bool   │ true/false                                  │ Bypass configured failures  │
+  └───────────────────┴────────┴─────────────────────────────────────────────┴─────────────────────────────┘
+
+  Note: "fatal" failures mark the workflow as FAILED without compensations, allowing rerun.
   ---
   Usage Examples
 
@@ -596,6 +608,25 @@ The saga-demo service integrates with existing services via Dapr service invocat
       "force_success": true
     }'
   Result: Succeeds despite fail_at_step being set. Useful for demonstrating recovery scenarios.
+
+  ---
+  6. Fatal Failure (Workflow FAILED, No Compensations)
+
+  curl -X POST http://localhost:3009/saga/orders \
+    -H "Content-Type: application/json" \
+    -d '{
+      "customer": "Frank",
+      "item": "monitor",
+      "total": 299.99,
+      "destination": "777 Crash Lane",
+      "fail_at_step": "charge",
+      "fail_type": "fatal"
+    }'
+  Result:
+  - Step 1 (reserve): SUCCESS
+  - Step 2 (charge): FATAL - workflow terminated
+  - No compensations executed
+  - Workflow status: FAILED (can be rerun)
 
   ---
   How It Works (Code Logic)

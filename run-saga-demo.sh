@@ -255,12 +255,35 @@ echo -e "\n${YELLOW}EXPECTED RESULT: 2 steps completed, 2 compensations executed
 echo -e "${YELLOW}Compensations run in reverse: refund_payment, then release_inventory${NC}"
 
 # =============================================
-# PHASE 6: SAGA PATTERN - FORCE SUCCESS
+# PHASE 6: SAGA PATTERN - FATAL FAILURE (NO COMPENSATION)
 # =============================================
 
-print_phase "6" "SAGA PATTERN - FORCE SUCCESS (RECOVERY)"
+print_phase "6" "SAGA PATTERN - FATAL FAILURE (WORKFLOW FAILED)"
 
-print_step "6.1" "Submitting Order with force_success Flag"
+print_step "6.1" "Submitting Order (Fatal Failure at Charge)"
+
+echo "Submitting order that will have a FATAL failure at charge step..."
+echo -e "${RED}Expected: Inventory reserved, then FATAL failure at charge${NC}"
+echo -e "${RED}Result: NO compensations, workflow marked as FAILED (rerunnable)${NC}"
+
+SAGA_FATAL_ID=$(submit_saga_order "Fatal" "crash-test" "199.99" "777 Crash Lane" "charge" "fatal" "500" "")
+
+wait_with_countdown 4 "Waiting for fatal failure..."
+
+print_step "6.2" "Verifying Fatal Failure (No Compensations)"
+
+check_saga_status "$SAGA_FATAL_ID"
+
+echo -e "\n${RED}EXPECTED RESULT: Workflow status=FAILED, no compensations executed${NC}"
+echo -e "${YELLOW}Unlike saga rollback, fatal failures can be rerun via Dapr workflow APIs${NC}"
+
+# =============================================
+# PHASE 7: SAGA PATTERN - FORCE SUCCESS
+# =============================================
+
+print_phase "7" "SAGA PATTERN - FORCE SUCCESS (RECOVERY)"
+
+print_step "7.1" "Submitting Order with force_success Flag"
 
 echo "Submitting order with failure config but force_success=true..."
 echo -e "${YELLOW}Expected: Failure config ignored, order completes successfully${NC}"
@@ -269,20 +292,20 @@ SAGA_FORCE_ID=$(submit_saga_order "Eve" "keyboard" "149.99" "555 Tech Lane" "cha
 
 wait_with_countdown 5 "Waiting for forced success..."
 
-print_step "6.2" "Verifying Forced Success"
+print_step "7.2" "Verifying Forced Success"
 
 check_saga_status "$SAGA_FORCE_ID"
 
 echo -e "\n${GREEN}SUCCESS: force_success flag bypassed the failure configuration${NC}"
 
 # =============================================
-# PHASE 7: CONTINUE-AS-NEW PATTERN
+# PHASE 8: CONTINUE-AS-NEW PATTERN
 # =============================================
 
 if ! $SKIP_MONITOR; then
-    print_phase "7" "CONTINUE-AS-NEW PATTERN"
+    print_phase "8" "CONTINUE-AS-NEW PATTERN"
 
-    print_step "7.1" "Starting Order Monitor"
+    print_step "8.1" "Starting Order Monitor"
 
     echo "Starting monitor workflow with continue-as-new pattern..."
     echo -e "${YELLOW}This demonstrates workflow history management for long-running processes${NC}"
@@ -300,7 +323,7 @@ if ! $SKIP_MONITOR; then
 
     wait_with_countdown 10 "Waiting for monitor iterations (observe history resets in Catalyst UI)..."
 
-    print_step "7.2" "Checking Monitor Status"
+    print_step "8.2" "Checking Monitor Status"
 
     echo "Final monitor status:"
     curl -s "$SAGA_SERVICE/monitor/$MONITOR_ID" | jq '.'
@@ -311,12 +334,12 @@ else
 fi
 
 # =============================================
-# PHASE 8: MULTI-LEVEL WORKFLOWS
+# PHASE 9: MULTI-LEVEL WORKFLOWS
 # =============================================
 
-print_phase "8" "MULTI-LEVEL WORKFLOW HIERARCHY"
+print_phase "9" "MULTI-LEVEL WORKFLOW HIERARCHY"
 
-print_step "8.1" "Submitting Fulfillment Order"
+print_step "9.1" "Submitting Fulfillment Order"
 
 echo "Submitting order for multi-level workflow processing..."
 echo -e "${CYAN}Workflow Hierarchy:${NC}"
@@ -339,7 +362,7 @@ FULFILLMENT_ID=$(echo "$FULFILLMENT_RESPONSE" | jq -r '.instance_id')
 
 wait_with_countdown 5 "Waiting for multi-level workflow to complete..."
 
-print_step "8.2" "Verifying Workflow Hierarchy"
+print_step "9.2" "Verifying Workflow Hierarchy"
 
 echo "Parent workflow status:"
 curl -s "$SAGA_SERVICE/fulfillment/orders/$FULFILLMENT_ID" | jq '.'
@@ -347,12 +370,12 @@ curl -s "$SAGA_SERVICE/fulfillment/orders/$FULFILLMENT_ID" | jq '.'
 echo -e "\n${GREEN}COMPLETE: Multi-level workflow executed with parallel grandchildren${NC}"
 
 # =============================================
-# PHASE 9: RERUN DEMONSTRATION
+# PHASE 10: RERUN DEMONSTRATION
 # =============================================
 
-print_phase "9" "RERUN DEMONSTRATION"
+print_phase "10" "RERUN DEMONSTRATION"
 
-print_step "9.1" "Same Order - Three Different Outcomes"
+print_step "10.1" "Same Order - Three Different Outcomes"
 
 echo "Demonstrating deterministic behavior with input-driven failures..."
 echo ""
@@ -369,7 +392,7 @@ echo -e "\n${CYAN}Run 3: Force success (recovery)${NC}"
 RERUN3_ID=$(submit_saga_order "RerunDemo" "speaker" "249.99" "111 Demo Lane" "charge" "error" "300" "true")
 wait_with_countdown 3 "Processing..."
 
-print_step "9.2" "Comparing Results"
+print_step "10.2" "Comparing Results"
 
 echo -e "${CYAN}Run 1 Result:${NC}"
 curl -s "$SAGA_SERVICE/saga/orders/$RERUN1_ID" | jq '{status: .status, success: .result.success, steps: .result.steps_completed, compensations: .result.compensations_executed}'
@@ -395,18 +418,20 @@ echo "  [Phase 2] Saga Success: All 3 steps completed"
 echo "  [Phase 3] Fail at Reserve: No compensations needed"
 echo "  [Phase 4] Fail at Charge: 1 compensation (release_inventory)"
 echo "  [Phase 5] Fail at Ship: 2 compensations (refund + release)"
-echo "  [Phase 6] Force Success: Bypassed failure configuration"
+echo "  [Phase 6] Fatal Failure: Workflow FAILED, no compensations (rerunnable)"
+echo "  [Phase 7] Force Success: Bypassed failure configuration"
 if ! $SKIP_MONITOR; then
-echo "  [Phase 7] Continue-As-New: History reset demonstrated"
+echo "  [Phase 8] Continue-As-New: History reset demonstrated"
 fi
-echo "  [Phase 8] Multi-Level: Parent -> Child -> Grandchildren (parallel)"
-echo "  [Phase 9] Rerun Demo: Same input, different outcomes"
+echo "  [Phase 9] Multi-Level: Parent -> Child -> Grandchildren (parallel)"
+echo "  [Phase 10] Rerun Demo: Same input, different outcomes"
 
 echo -e "\n${YELLOW}Workflow IDs for Reference:${NC}"
 echo "  Saga Success:    $SAGA_SUCCESS_ID"
 echo "  Fail Reserve:    $SAGA_FAIL_RESERVE_ID"
 echo "  Fail Charge:     $SAGA_FAIL_CHARGE_ID"
 echo "  Fail Ship:       $SAGA_FAIL_SHIP_ID"
+echo "  Fatal Failure:   $SAGA_FATAL_ID"
 echo "  Force Success:   $SAGA_FORCE_ID"
 echo "  Fulfillment:     $FULFILLMENT_ID"
 
