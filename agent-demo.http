@@ -1,0 +1,317 @@
+### =============================================
+### AGENT DEMO - Multi-Level Workflow Delegation
+### =============================================
+### PURPOSE: Demonstrates 4-level nested sub-workflows with cross-app delegation
+### ARCHITECTURE:
+###   Level 1: ProjectCoordinator (agent-coordinator) → CROSS-APP →
+###   Level 2: Supervisor (agent-worker) → PARALLEL →
+###   Level 3: Specialists (agent-worker) × N →
+###   Level 4: AtomicTasks (agent-worker)
+### KEY FEATURES:
+###   - SubOrchestrationInstance with app_id parameter
+###   - when_all for parallel specialist execution
+###   - Rule-based task decomposition (no LLM)
+###   - Failure injection at any level
+### DURATION: Allow 5-10 minutes for full demonstration
+###
+### IMPORTANT: To use response variables:
+###   1. Click "Send Request" on the POST request FIRST
+###   2. Copy the project_id from the response
+###   3. Use it in the GET request (or let the variable auto-populate)
+### =============================================
+
+### =============================================
+### PHASE 1: SYSTEM PREPARATION
+### =============================================
+
+### 1. Health check for agent-coordinator service
+GET http://localhost:3011/healthz
+
+### 2. Health check for agent-worker service
+GET http://localhost:3012/healthz
+
+### 3. Restock inventory (optional - if testing with inventory)
+POST http://localhost:3002/api/v1/inventory/restock
+
+### =============================================
+### PHASE 2: SIMPLE PROJECT (2 Tasks)
+### =============================================
+
+### 4. Submit a simple project with 2 tasks
+### PURPOSE: Demonstrates minimal 4-level workflow hierarchy
+### HIERARCHY:
+###   - project_xxx (L1: Coordinator)
+###     - project_xxx_supervisor (L2: Supervisor)
+###       - project_xxx_specialist_0 (L3: Researcher)
+###         - project_xxx_specialist_0_atomic (L4: Atomic)
+###       - project_xxx_specialist_1 (L3: Analyst)
+###         - project_xxx_specialist_1_atomic (L4: Atomic)
+// @name simple_project
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Simple Report",
+    "description": "Create a basic analysis report",
+    "complexity": "simple",
+    "task_count": 2,
+    "simulate_delay_ms": 500
+}
+
+### 5. Check simple project status
+### NOTE: Run the POST above first, then use the project_id from the response
+### Option A: Use auto-captured variable (after running POST above)
+@simple_project_id = {{simple_project.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{simple_project_id}}
+
+### Option B: Manual - paste your project_id here
+# GET http://localhost:3011/projects/project_xxxxxx
+
+### =============================================
+### PHASE 3: MODERATE PROJECT (3 Tasks)
+### =============================================
+
+### 6. Submit a moderate project with 3 tasks
+### PURPOSE: Shows research -> analysis -> synthesis pipeline
+### EXPECTED: 3 specialists run in parallel
+// @name moderate_project
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Market Analysis",
+    "description": "Conduct comprehensive market research and analysis",
+    "complexity": "moderate",
+    "task_count": 3,
+    "simulate_delay_ms": 400
+}
+
+### 7. Check moderate project status
+### NOTE: Run the POST above first, then use the project_id from the response
+@moderate_project_id = {{moderate_project.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{moderate_project_id}}
+
+### Option B: Manual - paste your project_id here
+# GET http://localhost:3011/projects/project_xxxxxx
+
+### =============================================
+### PHASE 4: COMPLEX PROJECT (4 Tasks)
+### =============================================
+
+### 8. Submit a complex project with 4 tasks
+### PURPOSE: Full pipeline - research -> analysis -> synthesis -> validation
+### DEMONSTRATES: Maximum parallelism with 4 specialists
+// @name complex_project
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Strategic Initiative",
+    "description": "Full strategic analysis with validation",
+    "complexity": "complex",
+    "task_count": 4,
+    "simulate_delay_ms": 300
+}
+
+### 9. Check complex project status
+@complex_project_id = {{complex_project.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{complex_project_id}}
+
+### =============================================
+### PHASE 5: FAILURE INJECTION - Level 1
+### =============================================
+
+### 10. Submit project with failure at Level 1 (Coordinator)
+### PURPOSE: Demonstrates failure at the entry point
+### EXPECTED: Immediate failure, no delegation to supervisor
+// @name fail_level_1
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Fail at Coordinator",
+    "description": "Test Level 1 failure injection",
+    "complexity": "simple",
+    "task_count": 2,
+    "fail_at_level": 1,
+    "simulate_delay_ms": 300
+}
+
+### 11. Check Level 1 failure status
+@fail_level_1_id = {{fail_level_1.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{fail_level_1_id}}
+
+### =============================================
+### PHASE 6: FAILURE INJECTION - Level 2
+### =============================================
+
+### 12. Submit project with failure at Level 2 (Supervisor)
+### PURPOSE: Demonstrates failure after cross-app delegation
+### EXPECTED: Coordinator succeeds, supervisor fails before spawning specialists
+// @name fail_level_2
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Fail at Supervisor",
+    "description": "Test Level 2 failure injection",
+    "complexity": "simple",
+    "task_count": 2,
+    "fail_at_level": 2,
+    "simulate_delay_ms": 300
+}
+
+### 13. Check Level 2 failure status
+@fail_level_2_id = {{fail_level_2.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{fail_level_2_id}}
+
+### =============================================
+### PHASE 7: FAILURE INJECTION - Level 3
+### =============================================
+
+### 14. Submit project with failure at Level 3 (Specialist)
+### PURPOSE: Demonstrates failure at specialist level
+### EXPECTED: Some specialists may complete, others fail
+// @name fail_level_3
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Fail at Specialist",
+    "description": "Test Level 3 failure injection",
+    "complexity": "moderate",
+    "task_count": 3,
+    "fail_at_level": 3,
+    "simulate_delay_ms": 300
+}
+
+### 15. Check Level 3 failure status
+@fail_level_3_id = {{fail_level_3.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{fail_level_3_id}}
+
+### =============================================
+### PHASE 8: FAILURE INJECTION - Level 4
+### =============================================
+
+### 16. Submit project with failure at Level 4 (Atomic Task)
+### PURPOSE: Demonstrates failure at the deepest level
+### EXPECTED: Atomic tasks fail, bubbles up through specialists
+// @name fail_level_4
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Fail at Atomic Task",
+    "description": "Test Level 4 failure injection",
+    "complexity": "simple",
+    "task_count": 2,
+    "fail_at_level": 4,
+    "simulate_delay_ms": 300
+}
+
+### 17. Check Level 4 failure status
+@fail_level_4_id = {{fail_level_4.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{fail_level_4_id}}
+
+### =============================================
+### PHASE 9: QUICK EXECUTION (Minimal Delays)
+### =============================================
+
+### 18. Submit fast project for quick demo
+### PURPOSE: Rapid execution for live demos
+### EXPECTED: All 4 levels complete quickly
+// @name quick_project
+POST http://localhost:3011/projects
+Content-Type: application/json
+
+{
+    "name": "Quick Demo",
+    "description": "Fast execution demonstration",
+    "complexity": "simple",
+    "task_count": 2,
+    "simulate_delay_ms": 100
+}
+
+### 19. Check quick project status
+@quick_project_id = {{quick_project.response.body.project_id}}
+
+GET http://localhost:3011/projects/{{quick_project_id}}
+
+### =============================================
+### DEMONSTRATION POINTS
+### =============================================
+###
+### KEY FEATURES TO HIGHLIGHT:
+###
+### 1. CROSS-APP WORKFLOW DELEGATION:
+###    - agent-coordinator calls agent-worker via app_id
+###    - SubOrchestrationInstanceCreated event shows cross-app call
+###    - Instance IDs maintain correlation across services
+###
+### 2. 4-LEVEL WORKFLOW HIERARCHY:
+###    - L1-COORDINATOR: Entry point, task decomposition
+###    - L2-SUPERVISOR: Parallel specialist management
+###    - L3-SPECIALIST: Role-based task processing
+###    - L4-ATOMIC: Timer-based task execution
+###
+### 3. PARALLEL EXECUTION:
+###    - Supervisor uses when_all for parallel specialists
+###    - All specialists run concurrently
+###    - Results aggregated after completion
+###
+### 4. RULE-BASED AGENT LOGIC:
+###    - No LLM required - deterministic rules
+###    - Complexity maps to task count
+###    - Task types map to specialist roles
+###
+### 5. FAILURE INJECTION:
+###    - fail_at_level: 1-4 controls failure point
+###    - Useful for testing error handling
+###    - Shows error propagation through levels
+###
+### 6. NOTIFICATION PREFIXES:
+###    - [L1-COORDINATOR] - Level 1 events
+###    - [L2-SUPERVISOR] - Level 2 events
+###    - [L3-SPECIALIST:ROLE] - Level 3 events
+###    - [L4-ATOMIC] - Level 4 events
+###
+### =============================================
+### CATALYST UI VERIFICATION:
+###
+### 1. Open Catalyst UI at console.diagrid.io
+### 2. Navigate to Workflows section
+### 3. Watch for these workflow patterns:
+###    - project_xxx (parent)
+###    - project_xxx_supervisor (child, cross-app)
+###    - project_xxx_specialist_0..N (grandchildren)
+###    - project_xxx_specialist_0_atomic (great-grandchildren)
+###
+### 4. Verify SubOrchestrationInstance events show:
+###    - instance_id with proper nesting
+###    - app_id="agent-worker" for cross-app calls
+###
+### =============================================
+### DEMO EXECUTION GUIDE:
+###
+### PREPARATION:
+###   1. Start all services: diagrid dev run -f dapr.yaml
+###   2. Open notifications UI at localhost:8080
+###   3. Open Catalyst UI for workflow visualization
+###
+### SUGGESTED FLOW:
+###   1. Start with simple project (Phase 2)
+###   2. Show parallel execution with moderate (Phase 3)
+###   3. Demonstrate full pipeline with complex (Phase 4)
+###   4. Show failure handling (Phases 5-8)
+###   5. Quick demo for rapid iteration (Phase 9)
+###
+### EXPECTED DURATION: 5-10 minutes
+### NOTIFICATION RATE: 10-30 events per project
+### =============================================

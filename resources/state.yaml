@@ -22,3 +22,6 @@ scopes:
   - batch-processor
   - returns
   - chaos-engineer
+  - saga-demo
+  - agent-coordinator
+  - agent-worker

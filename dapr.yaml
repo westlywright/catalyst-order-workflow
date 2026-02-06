@@ -75,3 +75,21 @@ apps:
     appHealthProbeInterval: 10
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
+  - appID: agent-coordinator
+    appPort: 3011
+    appDirPath: ./services/agent-coordinator
+    command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3
+  - appID: agent-worker
+    appPort: 3012
+    appDirPath: ./services/agent-worker
+    command: ["python3", "app.py"]
+    enableAppHealthCheck: true
+    appHealthCheckPath: /healthz
+    appHealthProbeInterval: 10
+    appHealthProbeTimeout: 2000
+    appHealthThreshold: 3

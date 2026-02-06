@@ -28,3 +28,9 @@ pip3 install -r requirements.txt
 
 cd ../saga-demo
 pip3 install -r requirements.txt
+
+cd ../agent-coordinator
+pip3 install -r requirements.txt
+
+cd ../agent-worker
+pip3 install -r requirements.txt
