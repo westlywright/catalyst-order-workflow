@@ -18,11 +18,11 @@ GET http://localhost:3007/health
 
 ### 2. Check inventory levels before bulk processing
 ### Expected: Sufficient stock for demonstration orders
-GET http://localhost:3002/api/v1/inventory
+GET http://localhost:3013/api/v1/inventory
 
 ### 3. Restock inventory if needed for demonstration
 ### Purpose: Ensure sufficient stock for bulk order processing
-POST http://localhost:3002/api/v1/inventory/restock
+POST http://localhost:3013/api/v1/inventory/restock
 
 ### =============================================
 ### PHASE 2: STANDARD BULK ORDER PROCESSING

@@ -2,7 +2,7 @@ import logging
 import os
 from flask import Flask, request, jsonify, make_response
 
-APP_PORT = int(os.getenv("APP_PORT", 3003))
+APP_PORT = int(os.getenv("APP_PORT", 3014))
 
 app = Flask(__name__)
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         level=logging.INFO)
     
     # Warn if running in debug mode in production
-    if APP_PORT != 3003:  # Assuming non-default port means production
+    if APP_PORT != 3014:  # Assuming non-default port means production
         logging.warning("Running with debug=False in production environment")
     
     main()

@@ -1,11 +1,11 @@
 ### Get the current inventory
-GET http://localhost:3002/api/v1/inventory
+GET http://localhost:3013/api/v1/inventory
 
 ### Delete the current inventory
-DELETE http://localhost:3002/api/v1/inventory
+DELETE http://localhost:3013/api/v1/inventory
 
 ### Restock inventory
-POST http://localhost:3002/api/v1/inventory/restock
+POST http://localhost:3013/api/v1/inventory/restock
 
 ### Submit a simple order
 // @name wfrequest

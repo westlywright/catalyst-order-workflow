@@ -13,6 +13,7 @@ from dapr.clients import DaprClient
 from flask import Flask, request, jsonify
 from dataclasses import dataclass, field
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Optional, List
 
 # Import resilient runtime wrapper for auto-reconnection
@@ -89,6 +90,8 @@ class MonitorConfig:
     check_interval_seconds: int = 5
     max_checks: int = 10
     current_iteration: int = 0
+    fail_at_iteration: Optional[int] = None       # Iteration number to fail at
+    fail_reason: Optional[str] = None             # "service_error", "order_lost", "stuck", "timeout"
 
 
 @dataclass
@@ -98,6 +101,8 @@ class MonitorResult:
     iterations_completed: int
     final_status: str
     message: str
+    failed: bool = False
+    fail_reason: Optional[str] = None
 
 
 # Multi-Level Workflow dataclasses
@@ -192,21 +197,28 @@ def should_fail_at_step(order: SagaOrderInput, step: str) -> bool:
     return order.fail_at_step == step and order.fail_type is not None
 
 
+def _get_attr(obj, key, default=None):
+    """Safely get attribute from dict, SimpleNamespace, or dataclass"""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def dict_to_saga_input(data) -> SagaOrderInput:
-    """Convert dict to SagaOrderInput"""
-    if isinstance(data, dict):
-        return SagaOrderInput(
-            id=data.get('id', ''),
-            customer=data.get('customer', ''),
-            item=data.get('item', ''),
-            total=float(data.get('total', 0)),
-            destination=data.get('destination', ''),
-            fail_at_step=data.get('fail_at_step'),
-            fail_type=data.get('fail_type'),
-            simulate_delay_ms=int(data.get('simulate_delay_ms', 0)),
-            force_success=bool(data.get('force_success', False))
-        )
-    return data
+    """Convert dict/SimpleNamespace to SagaOrderInput"""
+    if isinstance(data, SagaOrderInput):
+        return data
+    return SagaOrderInput(
+        id=_get_attr(data, 'id', ''),
+        customer=_get_attr(data, 'customer', ''),
+        item=_get_attr(data, 'item', ''),
+        total=float(_get_attr(data, 'total', 0)),
+        destination=_get_attr(data, 'destination', ''),
+        fail_at_step=_get_attr(data, 'fail_at_step'),
+        fail_type=_get_attr(data, 'fail_type'),
+        simulate_delay_ms=int(_get_attr(data, 'simulate_delay_ms', 0)),
+        force_success=bool(_get_attr(data, 'force_success', False))
+    )
 
 
 # =============================================================================
@@ -336,36 +348,73 @@ def saga_order_workflow(ctx: wf.DaprWorkflowContext, order_input):
 # CONTINUE-AS-NEW WORKFLOW - Demonstrates history management
 # =============================================================================
 
+def _parse_monitor_config(config_input) -> MonitorConfig:
+    """Convert dict/SimpleNamespace/dataclass to MonitorConfig"""
+    if isinstance(config_input, MonitorConfig):
+        return config_input
+    fail_at = _get_attr(config_input, 'fail_at_iteration')
+    if fail_at is not None:
+        fail_at = int(fail_at)
+    return MonitorConfig(
+        order_id=str(_get_attr(config_input, 'order_id', '')),
+        check_interval_seconds=int(_get_attr(config_input, 'check_interval_seconds', 5)),
+        max_checks=int(_get_attr(config_input, 'max_checks', 10)),
+        current_iteration=int(_get_attr(config_input, 'current_iteration', 0)),
+        fail_at_iteration=fail_at,
+        fail_reason=_get_attr(config_input, 'fail_reason')
+    )
+
+
 def order_monitor_workflow(ctx: wf.DaprWorkflowContext, config_input):
     """
     Continue-as-new pattern: Monitor an order with periodic checks.
     Demonstrates workflow history management for long-running processes.
-    """
-    if isinstance(config_input, dict):
-        config = MonitorConfig(
-            order_id=config_input.get('order_id', ''),
-            check_interval_seconds=int(config_input.get('check_interval_seconds', 5)),
-            max_checks=int(config_input.get('max_checks', 10)),
-            current_iteration=int(config_input.get('current_iteration', 0))
-        )
-    else:
-        config = config_input
+    Supports failure simulation via fail_at_iteration and fail_reason.
 
+    IMPORTANT: The activity call sequence (notify -> check -> notify) is always
+    identical regardless of failure config to preserve Dapr workflow determinism.
+    Failure simulation happens inside the check_order_status activity.
+    """
+    config = _parse_monitor_config(config_input)
     iteration = config.current_iteration + 1
 
+    # Activity 1: Notify iteration start (always called)
     yield ctx.call_activity(notify_saga,
                            input=f"[MONITOR] Iteration {iteration}/{config.max_checks} for order {config.order_id}")
 
-    # Perform status check
-    status = yield ctx.call_activity(check_order_status, input=config.order_id)
+    # Activity 2: Check order status (always called - failure simulation happens inside)
+    check_input = {
+        "order_id": config.order_id,
+        "iteration": iteration,
+        "fail_at_iteration": config.fail_at_iteration,
+        "fail_reason": config.fail_reason
+    }
+    status = yield ctx.call_activity(check_order_status, input=check_input)
 
+    # Activity 3: Notify result (always called)
     yield ctx.call_activity(notify_saga,
                            input=f"[MONITOR] Order {config.order_id} status: {status}")
 
+    # Branch on status (deterministic on replay since status comes from activity result)
+    failure_statuses = {
+        "service_error": "Status check service unavailable",
+        "order_not_found": "Order disappeared from system",
+        "stuck_processing": "Order stuck in processing - no status change",
+        "monitor_timeout": "Monitor exceeded timeout threshold",
+    }
+
+    if status in failure_statuses:
+        return MonitorResult(
+            order_id=config.order_id,
+            iterations_completed=iteration,
+            final_status=status,
+            message=f"{failure_statuses[status]} at iteration {iteration}",
+            failed=True,
+            fail_reason=config.fail_reason
+        )
+
     # Check if we've reached max iterations
     if iteration >= config.max_checks:
-        yield ctx.call_activity(notify_saga,
-                               input=f"[MONITOR] Monitoring complete for order {config.order_id} after {iteration} checks")
         return MonitorResult(
             order_id=config.order_id,
             iterations_completed=iteration,
@@ -376,6 +425,7 @@ def order_monitor_workflow(ctx: wf.DaprWorkflowContext, config_input):
     # Wait for next check interval
     yield ctx.create_timer(ctx.current_utc_datetime + timedelta(seconds=config.check_interval_seconds))
 
+    # Activity 4: Notify continue-as-new
     yield ctx.call_activity(notify_saga,
                            input=f"[MONITOR] Continuing as new - resetting history at iteration {iteration}")
 
@@ -384,7 +434,9 @@ def order_monitor_workflow(ctx: wf.DaprWorkflowContext, config_input):
         order_id=config.order_id,
         check_interval_seconds=config.check_interval_seconds,
         max_checks=config.max_checks,
-        current_iteration=iteration
+        current_iteration=iteration,
+        fail_at_iteration=config.fail_at_iteration,
+        fail_reason=config.fail_reason
     ))
 
 
@@ -414,7 +466,7 @@ def fulfillment_workflow(ctx: wf.DaprWorkflowContext, request_input):
                            input=f"[FULFILLMENT] Starting fulfillment for order {request.order_id}")
 
     # Spawn CHILD workflow: Validation
-    validation_id = f"{request.order_id}_validation"
+    validation_id = f"{request.order_id}_child_validation"
     child_workflows.append(validation_id)
 
     yield ctx.call_activity(notify_saga,
@@ -499,13 +551,13 @@ def validation_workflow(ctx: wf.DaprWorkflowContext, request_input):
     address_task = ctx.call_child_workflow(
         address_check_workflow,
         input=address_request,
-        instance_id=f"{request.order_id}_address_check"
+        instance_id=f"{request.order_id}_child_address_check"
     )
 
     payment_task = ctx.call_child_workflow(
         payment_check_workflow,
         input=payment_request,
-        instance_id=f"{request.order_id}_payment_check"
+        instance_id=f"{request.order_id}_child_payment_check"
     )
 
     # Wait for both grandchildren using when_all
@@ -728,9 +780,40 @@ def compensate_cancel_shipment(ctx, order_input) -> CompensationResult:
 # MONITOR/VALIDATION ACTIVITIES
 # =============================================================================
 
-def check_order_status(ctx, order_id: str) -> str:
-    """Activity to check order status"""
+def check_order_status(ctx, input_data) -> str:
+    """Activity to check order status. Supports failure simulation.
+
+    Input can be a plain order_id string (legacy) or a dict/SimpleNamespace with:
+        order_id, iteration, fail_at_iteration, fail_reason
+    """
+    # Handle both legacy string input and structured input
+    if isinstance(input_data, str):
+        order_id = input_data
+        iteration = None
+        fail_at_iteration = None
+        fail_reason = None
+    else:
+        order_id = _get_attr(input_data, 'order_id', '')
+        iteration = _get_attr(input_data, 'iteration')
+        fail_at_iteration = _get_attr(input_data, 'fail_at_iteration')
+        fail_reason = _get_attr(input_data, 'fail_reason')
+
     logging.info(f"[MONITOR] Checking status for order: {order_id}")
+
+    # Simulate failure if configured
+    if (fail_at_iteration is not None and iteration is not None
+            and iteration >= fail_at_iteration and fail_reason):
+        fail_reason_to_status = {
+            "service_error": "service_error",
+            "order_lost": "order_not_found",
+            "stuck": "stuck_processing",
+            "timeout": "monitor_timeout",
+        }
+        status = fail_reason_to_status.get(fail_reason)
+        if status:
+            logging.info(f"[MONITOR] Simulating failure: {status} at iteration {iteration}")
+            return status
+
     statuses = ["processing", "in_transit", "out_for_delivery", "delivered"]
     return random.choice(statuses)
 
@@ -867,11 +950,17 @@ def start_order_monitor():
     if not order_id:
         return jsonify({"error": "Bad Request", "message": "Missing order_id"}), 400
 
+    fail_at_iteration = request_data.get("fail_at_iteration")
+    if fail_at_iteration is not None:
+        fail_at_iteration = int(fail_at_iteration)
+
     config = MonitorConfig(
         order_id=order_id,
         check_interval_seconds=int(request_data.get("check_interval_seconds", 5)),
         max_checks=int(request_data.get("max_checks", 10)),
-        current_iteration=0
+        current_iteration=0,
+        fail_at_iteration=fail_at_iteration,
+        fail_reason=request_data.get("fail_reason")
     )
 
     monitor_id = f"monitor_{order_id}_{random.randint(1000, 9999)}"
@@ -890,7 +979,9 @@ def start_order_monitor():
         "config": {
             "order_id": config.order_id,
             "check_interval_seconds": config.check_interval_seconds,
-            "max_checks": config.max_checks
+            "max_checks": config.max_checks,
+            "fail_at_iteration": config.fail_at_iteration,
+            "fail_reason": config.fail_reason
         }
     }), 202
 

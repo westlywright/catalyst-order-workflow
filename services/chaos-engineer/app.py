@@ -3,9 +3,15 @@ import logging
 import os
 import random
 import string
+import sys
 import time
 import uuid
+
+# Add parent directory to path for common imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import dapr.ext.workflow as wf
+from common.resilient_workflow_runtime import ResilientWorkflowRuntime
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from enum import Enum
@@ -1725,8 +1731,11 @@ def main():
     else:
         logging.info("Chaos mode disabled - running in safe mode")
 
-    # Start the workflow runtime
-    wf_runtime = wf.WorkflowRuntime()
+    # Start the workflow runtime with auto-reconnection
+    wf_runtime = ResilientWorkflowRuntime(
+        reconnect_delay_seconds=2.0,
+        health_check_interval_seconds=10.0
+    )
     wf_runtime.register_workflow(chaos_resilience_workflow)
 
     # Register stage-specific notification activities
@@ -1762,7 +1771,7 @@ def main():
     wf_runtime.register_activity(execute_activity_execution_limbo_test)
     wf_runtime.register_activity(execute_distributed_transaction_failure_test)
 
-    wf_runtime.start()  # non-blocking
+    wf_runtime.start()  # non-blocking with auto-reconnect
 
     # Start the Flask app server
     app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)

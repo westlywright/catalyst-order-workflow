@@ -3,6 +3,6 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-EXPOSE 3003
+EXPOSE 3014
 ENTRYPOINT ["python"]
 CMD ["app.py"]

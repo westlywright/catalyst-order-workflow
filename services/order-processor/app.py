@@ -3,8 +3,14 @@ import logging
 import os
 import random
 import string
+import sys
 import time
+
+# Add parent directory to path for common imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import dapr.ext.workflow as wf
+from common.resilient_workflow_runtime import ResilientWorkflowRuntime
 from dapr.clients import DaprClient
 from flask import Flask, request, url_for
 from markupsafe import escape
@@ -411,16 +417,19 @@ def get_circuit_breaker_status():
 
 
 def main():
-    # Start the workflow runtime
+    # Start the workflow runtime with auto-reconnection
     logging.info("Starting workflow runtime...")
-    wf_runtime = wf.WorkflowRuntime()  # host/port comes from env vars
+    wf_runtime = ResilientWorkflowRuntime(
+        reconnect_delay_seconds=2.0,
+        health_check_interval_seconds=10.0
+    )
     wf_runtime.register_workflow(process_order_workflow)
     wf_runtime.register_activity(notify)
     wf_runtime.register_activity(reserve_inventory)
     wf_runtime.register_activity(submit_payment)
     wf_runtime.register_activity(submit_order_to_shipping)
     wf_runtime.register_activity(refund_payment)
-    wf_runtime.start()  # non-blocking
+    wf_runtime.start()  # non-blocking with auto-reconnect
 
     # Start the Flask app server
     app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)

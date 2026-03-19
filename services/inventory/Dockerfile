@@ -4,6 +4,6 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . . 
 RUN pip install requests
-EXPOSE 3002
+EXPOSE 3013
 ENTRYPOINT ["python"]
 CMD ["app.py"]

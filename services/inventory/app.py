@@ -6,7 +6,7 @@ from dapr.clients import DaprClient
 from dapr.clients.grpc._state import StateItem
 from flask import Flask, request, jsonify, make_response
 
-APP_PORT = int(os.getenv("APP_PORT", 3002))
+APP_PORT = int(os.getenv("APP_PORT", 3013))
 STATESTORE_NAME = os.getenv("STATESTORE_NAME", "statestore")
 
 app = Flask(__name__)
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         level=logging.INFO)
     
     # Warn if running in debug mode in production
-    if APP_PORT != 3002:  # Assuming non-default port means production
+    if APP_PORT != 3013:  # Assuming non-default port means production
         logging.warning("Running with debug=False in production environment")
     
     main()

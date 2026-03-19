@@ -18,7 +18,7 @@ GET http://localhost:3008/health
 
 ### 2. Check inventory levels (for restocking validation)
 ### Expected: Current inventory state for return processing
-GET http://localhost:3002/api/v1/inventory
+GET http://localhost:3013/api/v1/inventory
 
 ### =============================================
 ### PHASE 2: STANDARD RETURN PROCESSING

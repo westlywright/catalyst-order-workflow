@@ -3,7 +3,13 @@ import logging
 import os
 import random
 import string
+import sys
+
+# Add parent directory to path for common imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import dapr.ext.workflow as wf
+from common.resilient_workflow_runtime import ResilientWorkflowRuntime
 from dapr.clients import DaprClient
 from flask import Flask, request, jsonify, make_response, url_for
 from markupsafe import escape
@@ -765,9 +771,12 @@ def health_check():
     })
 
 def main():
-    # Start the workflow runtime
+    # Start the workflow runtime with auto-reconnection
     logging.info("Starting batch processor workflow runtime...")
-    wf_runtime = wf.WorkflowRuntime()
+    wf_runtime = ResilientWorkflowRuntime(
+        reconnect_delay_seconds=2.0,
+        health_check_interval_seconds=10.0
+    )
     wf_runtime.register_workflow(process_bulk_order_workflow)
     wf_runtime.register_workflow(process_single_item_workflow)
 
@@ -804,7 +813,7 @@ def main():
     wf_runtime.register_activity(submit_item_for_shipping)
     wf_runtime.register_activity(process_item_refund)
 
-    wf_runtime.start()  # non-blocking
+    wf_runtime.start()  # non-blocking with auto-reconnect
 
     # Start the Flask app server
     app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)

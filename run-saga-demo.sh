@@ -33,7 +33,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 SAGA_SERVICE="http://localhost:3009"
-INVENTORY_SERVICE="http://localhost:3002"
+INVENTORY_SERVICE="http://localhost:3013"
 NOTIFICATIONS_UI="http://localhost:8080"
 
 # Default options
@@ -305,7 +305,8 @@ echo -e "\n${GREEN}SUCCESS: force_success flag bypassed the failure configuratio
 if ! $SKIP_MONITOR; then
     print_phase "8" "CONTINUE-AS-NEW PATTERN"
 
-    print_step "8.1" "Starting Order Monitor"
+    # 8.1 - Success scenario
+    print_step "8.1" "Monitor Success (No Failures)"
 
     echo "Starting monitor workflow with continue-as-new pattern..."
     echo -e "${YELLOW}This demonstrates workflow history management for long-running processes${NC}"
@@ -319,16 +320,138 @@ if ! $SKIP_MONITOR; then
         }')
 
     echo "$MONITOR_RESPONSE" | jq '.'
-    MONITOR_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
+    MONITOR_SUCCESS_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
 
     wait_with_countdown 10 "Waiting for monitor iterations (observe history resets in Catalyst UI)..."
 
-    print_step "8.2" "Checking Monitor Status"
-
     echo "Final monitor status:"
-    curl -s "$SAGA_SERVICE/monitor/$MONITOR_ID" | jq '.'
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_SUCCESS_ID" | jq '.'
 
-    echo -e "\n${GREEN}COMPLETE: Monitor demonstrated continue-as-new with history resets${NC}"
+    echo -e "\n${GREEN}COMPLETE: Monitor completed all checks with history resets${NC}"
+
+    # 8.2 - Service Error failure
+    print_step "8.2" "Monitor Failure - Service Error"
+
+    echo "Starting monitor that will encounter a service error..."
+    echo -e "${YELLOW}Expected: Monitor runs 2 checks, then status check service becomes unavailable${NC}"
+
+    MONITOR_RESPONSE=$(curl -s -X POST "$SAGA_SERVICE/monitor/start" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "order_id": "'"$SAGA_SUCCESS_ID"'",
+            "check_interval_seconds": 2,
+            "max_checks": 5,
+            "fail_at_iteration": 3,
+            "fail_reason": "service_error"
+        }')
+
+    echo "$MONITOR_RESPONSE" | jq '.'
+    MONITOR_SVC_ERR_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
+
+    wait_with_countdown 8 "Waiting for monitor to fail at iteration 3..."
+
+    echo "Monitor status:"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_SVC_ERR_ID" | jq '.'
+
+    echo -e "\n${YELLOW}EXPECTED RESULT: Monitor failed with service_error at iteration 3${NC}"
+
+    # 8.3 - Order Lost failure
+    print_step "8.3" "Monitor Failure - Order Lost"
+
+    echo "Starting monitor that will discover the order is missing..."
+    echo -e "${YELLOW}Expected: Monitor runs 1 check, then order disappears from system${NC}"
+
+    MONITOR_RESPONSE=$(curl -s -X POST "$SAGA_SERVICE/monitor/start" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "order_id": "'"$SAGA_SUCCESS_ID"'",
+            "check_interval_seconds": 2,
+            "max_checks": 5,
+            "fail_at_iteration": 2,
+            "fail_reason": "order_lost"
+        }')
+
+    echo "$MONITOR_RESPONSE" | jq '.'
+    MONITOR_LOST_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
+
+    wait_with_countdown 6 "Waiting for monitor to detect lost order..."
+
+    echo "Monitor status:"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_LOST_ID" | jq '.'
+
+    echo -e "\n${YELLOW}EXPECTED RESULT: Monitor failed with order_lost at iteration 2${NC}"
+
+    # 8.4 - Stuck Order failure
+    print_step "8.4" "Monitor Failure - Stuck Order"
+
+    echo "Starting monitor that will detect a stuck order..."
+    echo -e "${YELLOW}Expected: Monitor runs 3 checks, then detects order is stuck in processing${NC}"
+
+    MONITOR_RESPONSE=$(curl -s -X POST "$SAGA_SERVICE/monitor/start" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "order_id": "'"$SAGA_SUCCESS_ID"'",
+            "check_interval_seconds": 2,
+            "max_checks": 6,
+            "fail_at_iteration": 4,
+            "fail_reason": "stuck"
+        }')
+
+    echo "$MONITOR_RESPONSE" | jq '.'
+    MONITOR_STUCK_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
+
+    wait_with_countdown 10 "Waiting for monitor to detect stuck order..."
+
+    echo "Monitor status:"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_STUCK_ID" | jq '.'
+
+    echo -e "\n${YELLOW}EXPECTED RESULT: Monitor failed with stuck at iteration 4${NC}"
+
+    # 8.5 - Timeout failure
+    print_step "8.5" "Monitor Failure - Timeout"
+
+    echo "Starting monitor that will timeout..."
+    echo -e "${YELLOW}Expected: Monitor runs 1 check, then exceeds timeout threshold${NC}"
+
+    MONITOR_RESPONSE=$(curl -s -X POST "$SAGA_SERVICE/monitor/start" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "order_id": "'"$SAGA_SUCCESS_ID"'",
+            "check_interval_seconds": 2,
+            "max_checks": 5,
+            "fail_at_iteration": 2,
+            "fail_reason": "timeout"
+        }')
+
+    echo "$MONITOR_RESPONSE" | jq '.'
+    MONITOR_TIMEOUT_ID=$(echo "$MONITOR_RESPONSE" | jq -r '.monitor_id')
+
+    wait_with_countdown 6 "Waiting for monitor to timeout..."
+
+    echo "Monitor status:"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_TIMEOUT_ID" | jq '.'
+
+    echo -e "\n${YELLOW}EXPECTED RESULT: Monitor failed with timeout at iteration 2${NC}"
+
+    # 8.6 - Summary comparison
+    print_step "8.6" "Monitor Results Comparison"
+
+    echo -e "${CYAN}Success:${NC}"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_SUCCESS_ID" | jq '{status: .status, iterations: .result.iterations_completed, final_status: .result.final_status, failed: .result.failed}'
+
+    echo -e "\n${CYAN}Service Error:${NC}"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_SVC_ERR_ID" | jq '{status: .status, iterations: .result.iterations_completed, final_status: .result.final_status, failed: .result.failed, fail_reason: .result.fail_reason}'
+
+    echo -e "\n${CYAN}Order Lost:${NC}"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_LOST_ID" | jq '{status: .status, iterations: .result.iterations_completed, final_status: .result.final_status, failed: .result.failed, fail_reason: .result.fail_reason}'
+
+    echo -e "\n${CYAN}Stuck Order:${NC}"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_STUCK_ID" | jq '{status: .status, iterations: .result.iterations_completed, final_status: .result.final_status, failed: .result.failed, fail_reason: .result.fail_reason}'
+
+    echo -e "\n${CYAN}Timeout:${NC}"
+    curl -s "$SAGA_SERVICE/monitor/$MONITOR_TIMEOUT_ID" | jq '{status: .status, iterations: .result.iterations_completed, final_status: .result.final_status, failed: .result.failed, fail_reason: .result.fail_reason}'
+
+    echo -e "\n${GREEN}COMPLETE: Monitor demonstrated continue-as-new with 4 failure scenarios${NC}"
 else
     echo -e "\n${YELLOW}Skipping monitor demo (use without -s flag to include)${NC}"
 fi
@@ -421,7 +544,7 @@ echo "  [Phase 5] Fail at Ship: 2 compensations (refund + release)"
 echo "  [Phase 6] Fatal Failure: Workflow FAILED, no compensations (rerunnable)"
 echo "  [Phase 7] Force Success: Bypassed failure configuration"
 if ! $SKIP_MONITOR; then
-echo "  [Phase 8] Continue-As-New: History reset demonstrated"
+echo "  [Phase 8] Continue-As-New: Success + 4 failure scenarios (service_error, order_lost, stuck, timeout)"
 fi
 echo "  [Phase 9] Multi-Level: Parent -> Child -> Grandchildren (parallel)"
 echo "  [Phase 10] Rerun Demo: Same input, different outcomes"
@@ -433,6 +556,13 @@ echo "  Fail Charge:     $SAGA_FAIL_CHARGE_ID"
 echo "  Fail Ship:       $SAGA_FAIL_SHIP_ID"
 echo "  Fatal Failure:   $SAGA_FATAL_ID"
 echo "  Force Success:   $SAGA_FORCE_ID"
+if ! $SKIP_MONITOR; then
+echo "  Monitor Success: $MONITOR_SUCCESS_ID"
+echo "  Monitor SvcErr:  $MONITOR_SVC_ERR_ID"
+echo "  Monitor Lost:    $MONITOR_LOST_ID"
+echo "  Monitor Stuck:   $MONITOR_STUCK_ID"
+echo "  Monitor Timeout: $MONITOR_TIMEOUT_ID"
+fi
 echo "  Fulfillment:     $FULFILLMENT_ID"
 
 echo -e "\n${YELLOW}Next Steps:${NC}"

@@ -19,8 +19,8 @@ A multi-service order processing system demonstrating Diagrid Catalyst APIs with
 | Service | Port | Language | Purpose |
 |---------|------|----------|---------|
 | order-processor | 3006 | Python | Main workflow engine with approval handling and circuit breaker patterns |
-| inventory | 3002 | Python | Inventory management using Catalyst State API |
-| payments | 3003 | Python | Payment processing with failure simulation |
+| inventory | 3013 | Python | Inventory management using Catalyst State API |
+| payments | 3014 | Python | Payment processing with failure simulation |
 | shipping | 3004 | Python | Shipping coordination service |
 | notifications | 8080 | Node.js/React | Real-time workflow monitoring UI |
 | batch-processor | 3007 | Python | Bulk order processing with parent-child workflows |
@@ -348,7 +348,7 @@ All temporary files, debugging scripts, and test artifacts should be organized i
 - `POST /orders/<order_id>/approve` - Approve high-value order
 - `GET /circuit-breakers` - Circuit breaker status
 
-### Inventory (port 3002)
+### Inventory (port 3013)
 - `GET /api/v1/inventory` - List inventory
 - `DELETE /api/v1/inventory` - Clear inventory
 - `POST /api/v1/inventory/restock` - Restock inventory

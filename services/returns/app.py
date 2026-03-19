@@ -3,7 +3,13 @@ import logging
 import os
 import random
 import string
+import sys
+
+# Add parent directory to path for common imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import dapr.ext.workflow as wf
+from common.resilient_workflow_runtime import ResilientWorkflowRuntime
 from dapr.clients import DaprClient
 from flask import Flask, request, jsonify, make_response, url_for
 from markupsafe import escape
@@ -150,7 +156,7 @@ def process_return_workflow(ctx: wf.DaprWorkflowContext, return_request: ReturnR
     yield ctx.call_activity(announce_return_type_determination, input=f"🔄 Determining return processing type...")
 
     return_type = determine_return_type(return_request.reason)
-    child_workflow_id = f"{return_request.id}_processing_{return_type}"
+    child_workflow_id = f"{return_request.id}_child_{return_type}"
 
     yield ctx.call_activity(announce_return_child_workflow_spawned, input=f"🚀 Spawning {return_type} return processing workflow")
 
@@ -863,9 +869,12 @@ def health_check():
     })
 
 def main():
-    # Start the workflow runtime
+    # Start the workflow runtime with auto-reconnection
     logging.info("Starting returns workflow runtime...")
-    wf_runtime = wf.WorkflowRuntime()
+    wf_runtime = ResilientWorkflowRuntime(
+        reconnect_delay_seconds=2.0,
+        health_check_interval_seconds=10.0
+    )
     wf_runtime.register_workflow(process_return_workflow)
     wf_runtime.register_workflow(process_defective_return_workflow)
     wf_runtime.register_workflow(process_standard_return_workflow)
@@ -913,7 +922,7 @@ def main():
     wf_runtime.register_activity(process_return_refund)
     wf_runtime.register_activity(restock_returned_inventory)
 
-    wf_runtime.start()  # non-blocking
+    wf_runtime.start()  # non-blocking with auto-reconnect
 
     # Start the Flask app server
     app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)

@@ -465,9 +465,9 @@ The saga-demo service integrates with existing services via Dapr service invocat
 
 | Target Service | Port | Endpoint | Saga Step |
 |----------------|------|----------|-----------|
-| inventory | 3002 | `POST /api/v1/inventory/reserve` | Reserve inventory |
-| payments | 3003 | `POST /api/v1/payments` | Charge payment |
-| payments | 3003 | `POST /api/v1/payments/{id}/refunds` | Refund compensation |
+| inventory | 3013 | `POST /api/v1/inventory/reserve` | Reserve inventory |
+| payments | 3014 | `POST /api/v1/payments` | Charge payment |
+| payments | 3014 | `POST /api/v1/payments/{id}/refunds` | Refund compensation |
 | shipping | 3004 | `POST /shipping/ship` | Create shipment |
 
 ---

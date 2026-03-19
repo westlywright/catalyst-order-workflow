@@ -16,10 +16,10 @@
 GET http://localhost:3009/healthz
 
 ### 2. Restock inventory before demo
-POST http://localhost:3002/api/v1/inventory/restock
+POST http://localhost:3013/api/v1/inventory/restock
 
 ### 3. Check inventory levels
-GET http://localhost:3002/api/v1/inventory
+GET http://localhost:3013/api/v1/inventory
 
 ### =============================================
 ### PHASE 2: SAGA PATTERN - Successful Order

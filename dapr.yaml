@@ -6,38 +6,39 @@ common:
   resourcesPaths: ["./resources"]
 apps:
   - appID: inventory
-    appPort: 3002
+    appPort: 3013
     appDirPath: ./services/inventory
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: order-processor
+    appPort: 3006
     appDirPath: ./services/order-processor
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: payments
-    appPort: 3003
+    appPort: 3014
     appDirPath: ./services/payments
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: notifications
-    appPort: 8080
+    appPort: 8085
     appDirPath: ./services/notifications
     command: ["npm", "run", "dev"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: shipping
@@ -50,7 +51,7 @@ apps:
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: returns
@@ -59,7 +60,7 @@ apps:
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: chaos-engineer
@@ -72,7 +73,7 @@ apps:
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: agent-coordinator
@@ -81,7 +82,7 @@ apps:
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3
   - appID: agent-worker
@@ -90,6 +91,6 @@ apps:
     command: ["python3", "app.py"]
     enableAppHealthCheck: true
     appHealthCheckPath: /healthz
-    appHealthProbeInterval: 10
+    appHealthProbeInterval: 3
     appHealthProbeTimeout: 2000
     appHealthThreshold: 3

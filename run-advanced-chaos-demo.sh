@@ -23,7 +23,7 @@ NC='\033[0m' # No Color
 # Configuration
 CHAOS_SERVICE="http://localhost:3010"
 ORDER_SERVICE="http://localhost:3006"
-INVENTORY_SERVICE="http://localhost:3002"
+INVENTORY_SERVICE="http://localhost:3013"
 BULK_SERVICE="http://localhost:3007"
 RETURN_SERVICE="http://localhost:3008"
 
